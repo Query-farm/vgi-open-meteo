@@ -5,13 +5,20 @@
 // defineWeatherFunction(). Two bespoke functions — geocoding() and elevation()
 // — don't follow the block shape and are defined directly.
 
-import { Float64, Int64, Utf8, type DataType } from "@query-farm/apache-arrow";
+// Value imports come from `vgi/worker-cf` (the workerd-safe facade) so the
+// Cloudflare bundle doesn't pull in the Node-only stdio Worker via the package
+// root. `ArgumentConstraints` is type-only (erased at build) so it's fine from
+// the root.
 import {
   batchFromColumns,
   defineTableFunction,
-  type ArgumentConstraints,
+  float64,
+  int64,
+  utf8,
+  type VgiDataType,
   type VgiFunction,
-} from "vgi";
+} from "vgi/worker-cf";
+import type { ArgumentConstraints } from "vgi";
 
 import { ENDPOINTS, type EndpointConfig } from "./endpoints.js";
 import { blockSchema, ELEVATION_SCHEMA, GEOCODING_SCHEMA, resultColumnsMd } from "./schemas.js";
@@ -36,7 +43,7 @@ import { apiKeyFromParams } from "./attach-options.js";
 
 /** Build the args / argDefaults / argDocs / argConstraints maps for an endpoint. */
 function buildArgSpec(config: EndpointConfig): {
-  args: Record<string, DataType>;
+  args: Record<string, VgiDataType>;
   argDefaults: Record<string, any>;
   argDocs: Record<string, string>;
   argConstraints: Record<string, ArgumentConstraints>;
@@ -44,9 +51,9 @@ function buildArgSpec(config: EndpointConfig): {
   // latitude/longitude (and, for archive/climate, start_date/end_date) have no
   // defaults → positional required args. Everything else gets a default →
   // named optional args, e.g. forecast_hourly(52.52, 13.41, timezone := 'auto').
-  const args: Record<string, DataType> = {
-    latitude: new Float64(),
-    longitude: new Float64(),
+  const args: Record<string, VgiDataType> = {
+    latitude: float64(),
+    longitude: float64(),
   };
   // NB: keep the word "decimal" out of arg docs — VGI313 reads it as the DECIMAL
   // data type. The type is exposed separately; docs describe meaning only.
@@ -61,16 +68,16 @@ function buildArgSpec(config: EndpointConfig): {
   };
 
   if (config.args.dateRange) {
-    args.start_date = new Utf8();
-    args.end_date = new Utf8();
+    args.start_date = utf8();
+    args.end_date = utf8();
     argDocs.start_date = "Start date, yyyy-mm-dd (inclusive).";
     argDocs.end_date = "End date, yyyy-mm-dd (inclusive).";
     argConstraints.start_date = { pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
     argConstraints.end_date = { pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
   }
   if (config.args.forecastDays) {
-    args.forecast_days = new Int64();
-    args.past_days = new Int64();
+    args.forecast_days = int64();
+    args.past_days = int64();
     argDefaults.forecast_days = BigInt(config.defaultForecastDays ?? 7);
     argDefaults.past_days = 0n;
     argDocs.forecast_days = "Number of forecast days to return.";
@@ -79,14 +86,14 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.past_days = { ge: 0 };
   }
   if (config.args.timezone) {
-    args.timezone = new Utf8();
+    args.timezone = utf8();
     argDefaults.timezone = "GMT";
     argDocs.timezone = "IANA timezone or 'auto'. Daily aggregates are bucketed in this zone; time columns are always emitted as UTC.";
   }
   if (config.args.units) {
-    args.temperature_unit = new Utf8();
-    args.wind_speed_unit = new Utf8();
-    args.precipitation_unit = new Utf8();
+    args.temperature_unit = utf8();
+    args.wind_speed_unit = utf8();
+    args.precipitation_unit = utf8();
     argDefaults.temperature_unit = "celsius";
     argDefaults.wind_speed_unit = "kmh";
     argDefaults.precipitation_unit = "mm";
@@ -98,7 +105,7 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.precipitation_unit = { choices: ["mm", "inch"] };
   }
   if (config.args.models) {
-    args.models = new Utf8();
+    args.models = utf8();
     argDefaults.models = config.defaultModels ?? "";
     argDocs.models = "Comma-separated model ids (empty = Open-Meteo default).";
   }
@@ -276,10 +283,10 @@ const geocoding = defineTableFunction<GeocodingArgs>({
   name: "geocoding",
   description: "Search places by name and return their coordinates (Open-Meteo geocoding).",
   args: {
-    name: new Utf8(),
-    count: new Int64(),
-    language: new Utf8(),
-    country_code: new Utf8(),
+    name: utf8(),
+    count: int64(),
+    language: utf8(),
+    country_code: utf8(),
   },
   argDefaults: { count: 10n, language: "en", country_code: "" },
   argDocs: {
@@ -388,7 +395,7 @@ interface ElevationArgs {
 const elevation = defineTableFunction<ElevationArgs>({
   name: "elevation",
   description: "Terrain elevation (90m DEM) for a coordinate (Open-Meteo elevation).",
-  args: { latitude: new Float64(), longitude: new Float64() },
+  args: { latitude: float64(), longitude: float64() },
   argDocs: {
     latitude: "Latitude in degrees north (WGS84).",
     longitude: "Longitude in degrees east (WGS84).",

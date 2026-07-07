@@ -5,3 +5,7 @@ dist/
 .DS_Store
 .env
 .env.*
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*

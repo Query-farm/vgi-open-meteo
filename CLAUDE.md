@@ -21,9 +21,12 @@ make test           # test-stdio + test-http (sqllogictest, 79 assertions, live 
 make test-stdio     # run test/sql/*.test against the bun stdio worker
 make test-http      # boot a local HTTP server, run the suite against it, stop it
 make test-cloud     # run against https://vgi-open-meteo.fly.dev (auth disabled → open)
+make test-cf        # run against the deployed Cloudflare Worker ($WORKER_CF)
 
 make docker-build   # plain `bun install` build — no vendoring
 make deploy         # fly deploy
+make cf-deploy      # wrangler deploy (Cloudflare Worker, src/bin/cf.ts)
+make cf-secret      # set the VGI_SIGNING_KEY state-token secret (once)
 ```
 
 Metadata quality is linted with **`vgi-lint`** (`~/Development/vgi-lint-check`):
@@ -129,6 +132,37 @@ per-member dynamic columns that don't fit a static Arrow schema.
   `OpenMeteoCatalog` directly. State tokens are XChaCha20-Poly1305 AEAD-sealed
   with the key derived from `VGI_SIGNING_KEY`. Serves `/health`. Optional
   JWT/OAuth auth is unchanged from the trains port (`src/auth.ts`).
+- `src/bin/cf.ts` — Cloudflare Workers entry (`export default { fetch }` via
+  `createVgiFetch` from `vgi/worker-cf`). Same catalog/registry; state tokens are
+  keyed off the `VGI_SIGNING_KEY` **secret** (`wrangler secret put`). See
+  "Cloudflare Workers" below.
+
+**Backend-agnostic Arrow (load-bearing for the CF build).** The shared modules
+(`schemas.ts`, `functions.ts`, `attach-options.ts`, `catalog.ts`) build Arrow
+schemas/types through vgi's portable factories (`schema`, `field`, `float64`,
+`int32`, `timestamp`, …) imported from **`vgi/worker-cf`**, never from
+`@query-farm/apache-arrow` directly. Two reasons: (1) on workerd vgi swaps in the
+flechette backend, so apache-arrow objects wouldn't match; (2) the package root
+(`"vgi"`) re-exports the Node-only stdio `Worker` (→ `serveUnix`/`serveTcp`, absent
+from vgi-rpc's workerd build), which breaks the Cloudflare bundle — `vgi/worker-cf`
+is the workerd-safe facade and behaves identically on Bun. Type-only imports
+(`ArgumentConstraints`) can still come from `"vgi"` (erased at build). Any
+`process.env` reads must be guarded (`globalThis.process?.env?…`) since workerd
+has no `process`.
+
+## Cloudflare Workers
+
+`make cf-deploy` (= `wrangler deploy`) ships `src/bin/cf.ts` per `wrangler.toml`.
+The flechette Arrow backend is selected automatically by the `workerd` export
+condition — no arrow-js reaches the edge (~148 KiB gzip bundle). Before the first
+real deploy, set the state-token key once: `make cf-secret` (random 32-byte hex →
+`wrangler secret put VGI_SIGNING_KEY`); a stable key is **required** because
+Workers isolates don't share memory, so a bind→scan query would otherwise fail
+when it lands on a different isolate. `make test-cf` runs the full sqllogictest
+suite against the deployment (`WORKER_CF`). Live at
+`https://vgi-open-meteo.rusty-bb6.workers.dev`. The in-memory `omGet` cache is
+per-isolate/ephemeral on CF (correct, just lower hit-rate); back it with the CF
+Cache API if cross-request caching matters.
 
 ## Attach options (the API key)
 

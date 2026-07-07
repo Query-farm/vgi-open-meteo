@@ -7,6 +7,8 @@
 //
 //   ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION '…' [, apikey 'KEY']);
 
+// Value imports from the workerd-safe facade (see schemas.ts) so this module —
+// shared by the stdio, HTTP, and Cloudflare entries — bundles for the edge.
 import {
   type CatalogAttachResult,
   type CatalogDescriptor,
@@ -14,13 +16,17 @@ import {
   type FunctionRegistry,
   ReadOnlyCatalogInterface,
   serializeAttachOptionSpecs,
-} from "vgi";
+} from "vgi/worker-cf";
 
 import { allWeatherFunctions } from "./functions.js";
 import { ATTACH_OPTION_SPECS, encodeAttachOpaqueData } from "./attach-options.js";
 
 export const DATA_VERSION = "1.0.0";
-export const GIT_COMMIT = process.env.VGI_OPEN_METEO_GIT_COMMIT || "unknown";
+// `process` doesn't exist on workerd (Cloudflare); read it defensively so the
+// same module loads on Bun/Node and the edge alike.
+export const GIT_COMMIT =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+    ?.VGI_OPEN_METEO_GIT_COMMIT || "unknown";
 
 export const CATALOG_NAME = "open_meteo";
 

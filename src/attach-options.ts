@@ -14,14 +14,17 @@
 // Unlike the example, decoding is *lenient*: a free-tier ATTACH carries no
 // apikey, so a missing/short payload simply yields `{}` (→ no key → free host).
 
-import { Schema, Field, Utf8 } from "@query-farm/apache-arrow";
+// From the workerd-safe facade (see schemas.ts) so the CF bundle stays clean.
 import {
   type AttachOptionSpec,
   batchFromColumns,
   deserializeBatch,
+  field,
+  schema,
   serializeBatch,
+  utf8,
   type TableProcessParams,
-} from "vgi";
+} from "vgi/worker-cf";
 
 const ATTACH_ID_SEP = 0x00;
 const UUID_BYTES = 16;
@@ -32,13 +35,13 @@ export const ATTACH_OPTION_SPECS: AttachOptionSpec[] = [
     name: "apikey",
     description:
       "Open-Meteo commercial API key. Omit for the free tier. When set, requests use the customer-* API hosts.",
-    type: new Utf8(),
+    type: utf8(),
     default: "",
   },
 ];
 
-const OPTIONS_SCHEMA = new Schema(
-  ATTACH_OPTION_SPECS.map((s) => new Field(s.name, s.type as any, true)),
+const OPTIONS_SCHEMA = schema(
+  ATTACH_OPTION_SPECS.map((s) => field(s.name, s.type as any, true)),
 );
 
 function randomUuidBytes(): Uint8Array {
