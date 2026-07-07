@@ -1,0 +1,44 @@
+app = 'vgi-open-meteo'
+primary_region = 'iad'
+
+[build]
+
+[env]
+  VGI_HTTP_CORS_ORIGINS = '*'
+  # Auth is currently DISABLED — the server runs open. serve.ts gates auth on
+  # VGI_JWT_ISSUER + VGI_JWT_AUDIENCE, so leaving them unset = no JWT/OAuth.
+  # To re-enable, uncomment the block below (and set the two client secrets via
+  # `flyctl secrets set VGI_OAUTH_CLIENT_SECRET=… VGI_OAUTH_DEVICE_CODE_CLIENT_SECRET=…`).
+  #
+  # JWT bearer validation — same Google OIDC credentials as vgi-trains-python-fly.
+  # VGI_JWT_ISSUER = 'https://accounts.google.com'
+  # VGI_JWT_AUDIENCE = '248277122218-f3iql69j2oir0tdi8195bnnnl5q7qgoo.apps.googleusercontent.com,248277122218-r9da1vpgj6flprrulsm34jnnan2oo34j.apps.googleusercontent.com'
+  # VGI_JWT_JWKS_URI = 'https://www.googleapis.com/oauth2/v3/certs'
+  # OAuth Protected Resource Metadata (RFC 9728). resource = this deployment.
+  # VGI_OAUTH_RESOURCE = 'https://vgi-open-meteo.fly.dev'
+  # VGI_OAUTH_AUTH_SERVERS = 'https://accounts.google.com'
+  # VGI_OAUTH_SCOPES = 'openid,email,profile'
+  # VGI_OAUTH_RESOURCE_NAME = 'Open-Meteo Weather'
+  # VGI_OAUTH_CLIENT_ID = '248277122218-f3iql69j2oir0tdi8195bnnnl5q7qgoo.apps.googleusercontent.com'
+  # VGI_OAUTH_DEVICE_CODE_CLIENT_ID = '248277122218-r9da1vpgj6flprrulsm34jnnan2oo34j.apps.googleusercontent.com'
+  # VGI_OAUTH_USE_ID_TOKEN = 'true'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '30s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
+    timeout = '5s'
+
+[[vm]]
+  memory = '256mb'
+  cpu_kind = 'shared'
+  cpus = 1

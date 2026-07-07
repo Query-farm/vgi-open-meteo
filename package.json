@@ -1,0 +1,23 @@
+{
+  "name": "vgi-open-meteo",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "bunx tsc -p tsconfig.json --noEmit",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "worker": "bun run src/bin/worker.ts",
+    "serve": "bun run src/bin/serve.ts"
+  },
+  "dependencies": {
+    "vgi": "npm:@query-farm/vgi@^0.12.0",
+    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.9.0",
+    "@query-farm/apache-arrow": "^21.1.1",
+    "jose": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
+  }
+}

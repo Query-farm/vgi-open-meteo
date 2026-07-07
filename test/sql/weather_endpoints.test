@@ -1,0 +1,150 @@
+# name: test/sql/weather_endpoints.test
+# description: historical / air-quality / marine / flood / climate endpoints (live Open-Meteo API)
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# Berlin (52.52, 13.41) for land endpoints; a North Sea coastal point
+# (54.5, 8.0) for marine so wave variables are populated.
+
+# ============================================================================
+# historical_hourly / historical_daily (ERA5 archive) — fixed past date range
+# ============================================================================
+
+query TTT
+SELECT typeof(time), typeof(temperature_2m), typeof(weather_code)
+FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-01-01', '2024-01-02') LIMIT 1;
+----
+TIMESTAMP WITH TIME ZONE	DOUBLE	INTEGER
+
+# 2 inclusive days × 24 hours
+query I
+SELECT count(*) = 48 FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-01-01', '2024-01-02');
+----
+true
+
+# archive temperatures are present and physically sane
+query I
+SELECT count(*) = 0 FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-01-01', '2024-01-02')
+WHERE temperature_2m IS NULL OR temperature_2m < -90 OR temperature_2m > 60;
+----
+true
+
+query I
+SELECT count(*) = 2 FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-01-01', '2024-01-02');
+----
+true
+
+query I
+SELECT count(*) = 0 FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-01-01', '2024-01-02')
+WHERE temperature_2m_max < temperature_2m_min;
+----
+true
+
+# ============================================================================
+# air_quality_hourly / air_quality_current
+# ============================================================================
+
+query TT
+SELECT typeof(european_aqi), typeof(pm2_5)
+FROM open_meteo.main.air_quality_current(52.52, 13.41) LIMIT 1;
+----
+INTEGER	DOUBLE
+
+# default 5 forecast days × 24 hours
+query I
+SELECT count(*) = 120 FROM open_meteo.main.air_quality_hourly(52.52, 13.41);
+----
+true
+
+query I
+SELECT count(*) = 1 FROM open_meteo.main.air_quality_current(52.52, 13.41);
+----
+true
+
+# pollutant concentrations are never negative
+query I
+SELECT count(*) = 0 FROM open_meteo.main.air_quality_hourly(52.52, 13.41)
+WHERE pm2_5 < 0 OR pm10 < 0 OR ozone < 0;
+----
+true
+
+# ============================================================================
+# marine_hourly / marine_daily — coastal point
+# ============================================================================
+
+query T
+SELECT typeof(wave_height) FROM open_meteo.main.marine_hourly(54.5, 8.0) LIMIT 1;
+----
+DOUBLE
+
+# default 7 forecast days × 24 hours
+query I
+SELECT count(*) = 168 FROM open_meteo.main.marine_hourly(54.5, 8.0);
+----
+true
+
+# wave height is populated at sea and non-negative
+query I
+SELECT count(*) > 0 FROM open_meteo.main.marine_hourly(54.5, 8.0) WHERE wave_height >= 0;
+----
+true
+
+query I
+SELECT count(*) = 7 FROM open_meteo.main.marine_daily(54.5, 8.0);
+----
+true
+
+# ============================================================================
+# flood_daily — river discharge
+# ============================================================================
+
+query TT
+SELECT typeof(time), typeof(river_discharge)
+FROM open_meteo.main.flood_daily(52.52, 13.41) LIMIT 1;
+----
+TIMESTAMP WITH TIME ZONE	DOUBLE
+
+# default forecast window is 30 days
+query I
+SELECT count(*) = 30 FROM open_meteo.main.flood_daily(52.52, 13.41);
+----
+true
+
+query I
+SELECT count(*) = 0 FROM open_meteo.main.flood_daily(52.52, 13.41)
+WHERE river_discharge < 0;
+----
+true
+
+# ============================================================================
+# climate_daily — downscaled projection over a fixed range
+# ============================================================================
+
+query TT
+SELECT typeof(time), typeof(temperature_2m_max)
+FROM open_meteo.main.climate_daily(52.52, 13.41, '2030-01-01', '2030-01-31') LIMIT 1;
+----
+TIMESTAMP WITH TIME ZONE	DOUBLE
+
+# 31 days in January
+query I
+SELECT count(*) = 31 FROM open_meteo.main.climate_daily(52.52, 13.41, '2030-01-01', '2030-01-31');
+----
+true
+
+query I
+SELECT count(*) = 0 FROM open_meteo.main.climate_daily(52.52, 13.41, '2030-01-01', '2030-01-31')
+WHERE temperature_2m_max < temperature_2m_min;
+----
+true
+
+statement ok
+DETACH open_meteo;

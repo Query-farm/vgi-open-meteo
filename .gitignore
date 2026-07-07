@@ -1,0 +1,7 @@
+node_modules/
+duckdb_unittest_tempdir/
+dist/
+*.log
+.DS_Store
+.env
+.env.*

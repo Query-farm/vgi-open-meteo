@@ -1,0 +1,85 @@
+# name: test/sql/open_meteo_catalog.test
+# description: Catalog discovery, ATTACH (incl. apikey option), and function listing for the Open-Meteo worker
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+# ============================================================================
+# Catalog discovery
+# ============================================================================
+
+# Worker should expose the "open_meteo" catalog
+query I
+SELECT catalog FROM vgi_catalogs('${VGI_OPEN_METEO_WORKER}');
+----
+open_meteo
+
+# The optional `apikey` ATTACH option should be advertised
+query I
+SELECT len(attach_options) FROM vgi_catalogs('${VGI_OPEN_METEO_WORKER}');
+----
+1
+
+query I
+SELECT attach_options[1].name FROM vgi_catalogs('${VGI_OPEN_METEO_WORKER}');
+----
+apikey
+
+# ============================================================================
+# ATTACH and schema discovery
+# ============================================================================
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# Should have a "main" schema
+query II
+SELECT catalog_name, schema_name FROM information_schema.schemata WHERE catalog_name = 'open_meteo';
+----
+open_meteo	main
+
+# ============================================================================
+# Function discovery — all weather functions are table functions (no zero-arg
+# catalog tables, since every function requires coordinates / a search name).
+# ============================================================================
+
+query I rowsort
+SELECT DISTINCT function_name FROM duckdb_functions() WHERE database_name = 'open_meteo';
+----
+air_quality_current
+air_quality_hourly
+climate_daily
+elevation
+flood_daily
+forecast_current
+forecast_daily
+forecast_hourly
+geocoding
+historical_daily
+historical_hourly
+marine_daily
+marine_hourly
+
+statement ok
+DETACH open_meteo;
+
+# ============================================================================
+# ATTACH with an apikey option must be accepted (validated + cast by the
+# extension). We do NOT run a weather query here: a key routes every request to
+# the commercial customer-* hosts, which reject a non-real key.
+# ============================================================================
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo_keyed (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}', apikey 'test-key');
+
+query II
+SELECT catalog_name, schema_name FROM information_schema.schemata WHERE catalog_name = 'open_meteo_keyed';
+----
+open_meteo_keyed	main
+
+statement ok
+DETACH open_meteo_keyed;

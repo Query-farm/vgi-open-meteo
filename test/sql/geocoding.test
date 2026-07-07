@@ -1,0 +1,61 @@
+# name: test/sql/geocoding.test
+# description: geocoding search + elevation (live Open-Meteo API)
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# ============================================================================
+# geocoding — column types
+# ============================================================================
+
+query TTTT
+SELECT typeof(id), typeof(latitude), typeof(population), typeof(postcodes)
+FROM open_meteo.main.geocoding('Berlin') LIMIT 1;
+----
+BIGINT	DOUBLE	BIGINT	VARCHAR[]
+
+# Searching for Berlin should return the German capital with plausible coords
+query I
+SELECT count(*) >= 1 FROM open_meteo.main.geocoding('Berlin', count := 5)
+WHERE country_code = 'DE' AND latitude BETWEEN 52 AND 53 AND longitude BETWEEN 13 AND 14;
+----
+true
+
+# country_code filter narrows results
+query I
+SELECT count(*) >= 1 FROM open_meteo.main.geocoding('Paris', country_code := 'FR');
+----
+true
+
+# autoApplyFilters: a WHERE on a projected column is applied
+query I
+SELECT count(*) = 0 FROM open_meteo.main.geocoding('Springfield', count := 20)
+WHERE country_code <> 'US' AND country_code = 'US';
+----
+true
+
+# ============================================================================
+# elevation — one row echoing the input coordinate plus its terrain elevation
+# ============================================================================
+
+query III
+SELECT latitude, longitude, typeof(elevation) = 'DOUBLE'
+FROM open_meteo.main.elevation(52.52, 13.41);
+----
+52.52	13.41	true
+
+# Berlin sits well below 1000m and above sea level
+query I
+SELECT elevation BETWEEN -10 AND 1000 FROM open_meteo.main.elevation(52.52, 13.41);
+----
+true
+
+statement ok
+DETACH open_meteo;

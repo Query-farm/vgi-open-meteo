@@ -1,0 +1,82 @@
+# name: test/sql/forecast.test
+# description: forecast_hourly / forecast_daily / forecast_current schema + data (live Open-Meteo API)
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# Berlin coordinates — a major land location that always has a forecast.
+
+# ============================================================================
+# forecast_hourly — column types
+# ============================================================================
+
+query TTTT
+SELECT typeof(time), typeof(temperature_2m), typeof(weather_code), typeof(is_day)
+FROM open_meteo.main.forecast_hourly(52.52, 13.41) LIMIT 1;
+----
+TIMESTAMP WITH TIME ZONE	DOUBLE	INTEGER	BOOLEAN
+
+# 7 forecast days × 24 hours = 168 hourly rows by default
+query I
+SELECT count(*) = 168 FROM open_meteo.main.forecast_hourly(52.52, 13.41);
+----
+true
+
+# temperature should be present and within a sane physical range
+query I
+SELECT count(*) = 0 FROM open_meteo.main.forecast_hourly(52.52, 13.41)
+WHERE temperature_2m IS NULL OR temperature_2m < -90 OR temperature_2m > 60;
+----
+true
+
+# past_days / forecast_days args extend the range
+query I
+SELECT count(*) = 48 FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1, past_days := 1);
+----
+true
+
+# ============================================================================
+# forecast_daily — sunrise/sunset are emitted as UTC timestamps
+# ============================================================================
+
+query TTT
+SELECT typeof(time), typeof(temperature_2m_max), typeof(sunrise)
+FROM open_meteo.main.forecast_daily(52.52, 13.41) LIMIT 1;
+----
+TIMESTAMP WITH TIME ZONE	DOUBLE	TIMESTAMP WITH TIME ZONE
+
+query I
+SELECT count(*) = 7 FROM open_meteo.main.forecast_daily(52.52, 13.41);
+----
+true
+
+# daily max should be >= daily min on every row
+query I
+SELECT count(*) = 0 FROM open_meteo.main.forecast_daily(52.52, 13.41)
+WHERE temperature_2m_max < temperature_2m_min;
+----
+true
+
+# ============================================================================
+# forecast_current — exactly one row
+# ============================================================================
+
+query I
+SELECT count(*) = 1 FROM open_meteo.main.forecast_current(52.52, 13.41);
+----
+true
+
+query I
+SELECT temperature_2m IS NOT NULL FROM open_meteo.main.forecast_current(52.52, 13.41);
+----
+true
+
+statement ok
+DETACH open_meteo;
