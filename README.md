@@ -130,10 +130,25 @@ ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION '…', apikey 'YOUR_KEY');
 ## Discovering docs from SQL
 
 Every function, macro, column, and argument is documented in the catalog's
-`vgi.*` metadata (LLM/Markdown descriptions, keywords, example queries, result
-columns). VGI-aware tooling surfaces these; from plain DuckDB you can also read a
-macro's exact mapping with `SELECT macro_definition FROM duckdb_functions()
-WHERE function_name = 'weather_code_text'`.
+`vgi.*` metadata, and it's all queryable from DuckDB:
+
+```sql
+-- Object docs: descriptions, example queries, keywords, category
+SELECT function_name, tags
+FROM duckdb_functions() WHERE database_name = 'open_meteo';
+
+-- Per-argument docs + machine-readable constraints (choices / range / pattern)
+SELECT function_name, arg_name, arg_description, arg_choices, arg_range, arg_pattern
+FROM vgi_function_arguments() WHERE catalog_name = 'm';
+
+-- A macro's exact mapping
+SELECT macro_definition FROM duckdb_functions() WHERE function_name = 'weather_code_text';
+```
+
+`duckdb_functions().tags` holds `vgi.doc_llm` / `vgi.doc_md` / `vgi.example_queries`
+/ `vgi.keywords`; `vgi_function_arguments()` holds the argument descriptions and
+the `choices` / `ge`/`le` / `pattern` constraints (so an agent can discover valid
+inputs). Both cover the table functions and the macros.
 
 ## Development
 

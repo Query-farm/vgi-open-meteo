@@ -87,11 +87,16 @@ category; the (deterministic) macros are asserted in `open_meteo_catalog.test`.
 DuckDB rejects correlated/`LATERAL` column references ("does not support lateral
 join column parameters"). So the geocode→forecast bridge is a two-step (read the
 coordinates from `geocoding(...)`, then call `forecast_*` with those numbers),
-not a single correlated join. `duckdb_functions().examples` carries runnable
-examples for every function (the generator tailors them per endpoint: date
-ranges, `forecast_days`/`past_days`, units, climate `models`); `argDocs` and
-column comments are set but do **not** surface through DuckDB's
-`duckdb_functions()` / `DESCRIBE` in current builds.
+not a single correlated join. `duckdb_functions().examples` carries the runnable
+examples set on each function (the generator tailors them per endpoint: date
+ranges, `forecast_days`/`past_days`, units, climate `models`). The rest of the
+metadata **is** queryable — don't be fooled by the empty `.examples`/`.description`
+columns on macros: the `vgi.*` docs (doc_llm/doc_md/example_queries/keywords/
+category) surface in **`duckdb_functions().tags`**, and per-argument docs plus
+the `choices`/`ge`/`le`/`pattern` constraints surface in **`vgi_function_arguments()`**
+(`arg_description`, `arg_choices`, `arg_range`, `arg_pattern`) — for both the
+table functions and the macros. Column comments surface via `duckdb_columns()` /
+`DESCRIBE` as usual.
 
 Eleven are **"block" functions** generated from one config table; two are
 bespoke:
