@@ -43,8 +43,9 @@ SELECT catalog_name, schema_name FROM information_schema.schemata WHERE catalog_
 open_meteo	main
 
 # ============================================================================
-# Function discovery — all weather functions are table functions (no zero-arg
-# catalog tables, since every function requires coordinates / a search name).
+# Function discovery — 13 weather table functions (every one requires
+# coordinates / a search name, so there are no zero-arg catalog tables) plus 6
+# scalar decoding macros (weather_code / wind / AQI / UV → labels).
 # ============================================================================
 
 query I rowsort
@@ -54,6 +55,7 @@ air_quality_current
 air_quality_hourly
 climate_daily
 elevation
+european_aqi_category
 flood_daily
 forecast_current
 forecast_daily
@@ -63,6 +65,21 @@ historical_daily
 historical_hourly
 marine_daily
 marine_hourly
+us_aqi_category
+uv_index_category
+weather_code_emoji
+weather_code_text
+wind_compass
+
+# The decoding macros are pure SQL (no RPC) and deterministic, so assert their
+# labels directly.
+query TTTT
+SELECT open_meteo.main.weather_code_text(61),
+       open_meteo.main.wind_compass(315),
+       open_meteo.main.us_aqi_category(120),
+       open_meteo.main.uv_index_category(9);
+----
+Slight rain	NW	Unhealthy for Sensitive Groups	Very High
 
 statement ok
 DETACH open_meteo;

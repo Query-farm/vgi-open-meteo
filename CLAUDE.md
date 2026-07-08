@@ -65,12 +65,23 @@ must match it, or you get "No worker handles catalog '<name>'".
 
 ## Functions
 
-There are **13 table functions, no catalog tables**: every function requires
-`latitude`/`longitude` (or a `name`) as a *positional* argument, so there's
-nothing to `SELECT * FROM table` without `()`. Optional args (`timezone`,
-`forecast_days`, `temperature_unit`, …) are *named* (they have defaults).
-Multi-location is done in SQL (`UNION ALL` / cross join over a coordinates
-table), not via partitioning.
+There are **13 table functions + 6 scalar macros, no catalog tables**: every
+function requires `latitude`/`longitude` (or a `name`) as a *positional*
+argument, so there's nothing to `SELECT * FROM table` without `()`. Optional args
+(`timezone`, `forecast_days`, `temperature_unit`, …) are *named* (they have
+defaults). Multi-location is done in SQL (`UNION ALL` / cross join over a
+coordinates table), not via partitioning.
+
+**Decoding macros (SQL ergonomics).** The functions return several raw coded
+numbers; `src/macros.ts` adds catalog **macros** that translate them to labels:
+`weather_code_text` / `weather_code_emoji` (WMO code), `wind_compass` (degrees →
+16-point compass), `us_aqi_category` / `european_aqi_category` (AQI bands), and
+`uv_index_category`. They're *macros*, not scalar functions, deliberately: DuckDB
+expands a macro inline as SQL (zero RPC round-trips, no worker load) whereas a VGI
+scalar function is an RPC per value. Call them schema-qualified, e.g.
+`SELECT open_meteo.main.weather_code_text(weather_code) FROM open_meteo.main.forecast_current(52.52, 13.41)`.
+They carry the same `vgi.*` docs as the functions and sit under the `helpers`
+category; the (deterministic) macros are asserted in `open_meteo_catalog.test`.
 
 **Args must be literals.** VGI table functions only accept literal arguments —
 DuckDB rejects correlated/`LATERAL` column references ("does not support lateral
@@ -121,6 +132,9 @@ per-member dynamic columns that don't fit a static Arrow schema.
 - `src/functions.ts` — `defineWeatherFunction(config)` generates the 11 block
   functions; `geocoding` and `elevation` are defined directly. All read the API
   key via `apiKeyFromParams(params)`.
+- `src/macros.ts` — `WEATHER_MACROS`, the 6 scalar decoding macros (WMO code,
+  wind compass, AQI, UV) added to the `main` schema. Pure SQL `definition`
+  strings; no runtime vgi import (type-only), so they add nothing to any bundle.
 - `src/catalog.ts` — the `open_meteo` `CatalogDescriptor` plus `OpenMeteoCatalog`
   (the catalog interface subclass that advertises + plumbs the apikey option —
   see below) and `buildRegistry()`.

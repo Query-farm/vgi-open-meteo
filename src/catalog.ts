@@ -19,6 +19,7 @@ import {
 } from "vgi/worker-cf";
 
 import { allWeatherFunctions } from "./functions.js";
+import { WEATHER_MACROS } from "./macros.js";
 import { ATTACH_OPTION_SPECS, encodeAttachOpaqueData } from "./attach-options.js";
 
 export const DATA_VERSION = "1.0.0";
@@ -96,6 +97,7 @@ const SCHEMA_CATEGORIES = [
   { name: "climate", title: "Climate Projections", description: "Downscaled climate-change projections (1950 to 2050)." },
   { name: "geocoding", title: "Geocoding", description: "Place-name search returning coordinates." },
   { name: "reference", title: "Reference", description: "Terrain elevation and other coordinate lookups." },
+  { name: "helpers", title: "Decoding Helpers", description: "SQL macros that translate raw codes (weather, wind, AQI, UV) into human-readable labels." },
 ];
 
 const AGENT_TEST_TASKS = [
@@ -181,6 +183,7 @@ export const openMeteoCatalog: CatalogDescriptor = {
         domain: "weather",
       },
       functions: allWeatherFunctions,
+      macros: WEATHER_MACROS,
     },
   ],
 };
