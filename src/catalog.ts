@@ -43,8 +43,9 @@ const CATALOG_DOC_LLM =
   "flood outlooks, and downscaled climate-change projections. A geocoding search turns place names " +
   "into coordinates and an elevation lookup returns terrain height. Every function takes a " +
   "latitude/longitude (geocoding takes a name), returns timestamps in UTC, and accepts an optional " +
-  "commercial API key at ATTACH time. Reach for it to answer 'what is/was/will be the weather at " +
-  "this point' questions directly in SQL.";
+  "commercial API key at ATTACH time. Inline SQL macros decode the raw coded columns into labels " +
+  "(weather_code to text/emoji, wind direction to compass points, AQI and UV to categories). Reach " +
+  "for it to answer 'what is/was/will be the weather at this point' questions directly in SQL.";
 
 const CATALOG_DOC_MD = [
   "## Open-Meteo weather for DuckDB",
@@ -57,7 +58,8 @@ const CATALOG_DOC_MD = [
   "Point-based **forecasts** (hourly, daily, current), **historical** reanalysis back to 1940, " +
     "**air quality**, **marine** waves and swell, **flood** river-discharge, and downscaled **climate** " +
     "projections. A **geocoding** search maps place names to coordinates, and an **elevation** lookup " +
-    "returns terrain height.",
+    "returns terrain height. Inline **decoding macros** turn raw coded columns into labels (weather " +
+    "code → text/emoji, wind direction → compass, AQI and UV → categories).",
   "",
   "### Conventions",
   "",
@@ -73,7 +75,11 @@ const SCHEMA_DOC_LLM =
   "and elevation to look up terrain height. All functions share one calling convention — a WGS84 " +
   "latitude/longitude and named optional arguments (timezone, units, forecast_days, date ranges, " +
   "models) — and emit UTC timestamps. Query a single point per call and combine locations in SQL " +
-  "with UNION ALL or a cross join over a coordinates table.";
+  "with UNION ALL or a cross join over a coordinates table. The schema also provides inline SQL " +
+  "decoding macros in its 'helpers' category — weather_code_text and weather_code_emoji (WMO code), " +
+  "wind_compass (degrees to a 16-point compass), us_aqi_category / european_aqi_category, and " +
+  "uv_index_category — that turn the raw coded columns into human-readable labels; call them " +
+  "schema-qualified, e.g. weather_code_text(weather_code).";
 
 const SCHEMA_DOC_MD = [
   "## Open-Meteo functions",
@@ -86,6 +92,20 @@ const SCHEMA_DOC_MD = [
     "`name`), named optional arguments, and UTC timestamps. To cover several places, read their " +
     "coordinates from `geocoding(...)` first, then call the weather functions for each — arguments must " +
     "be literals, so this is a two-step, not a correlated join.",
+  "",
+  "### Decoding helpers",
+  "",
+  "Several columns come back as raw codes. The schema's `helpers` category adds inline SQL macros " +
+    "that decode them — `weather_code_text` / `weather_code_emoji`, `wind_compass`, " +
+    "`us_aqi_category` / `european_aqi_category`, and `uv_index_category`. They expand inline (no " +
+    "round-trip); call them schema-qualified alongside the functions:",
+  "",
+  "```sql",
+  "SELECT time,",
+  "       weather_code_text(weather_code) AS conditions,",
+  "       wind_compass(wind_direction_10m) AS wind_from",
+  "FROM forecast_hourly(52.52, 13.41);",
+  "```",
 ].join("\n");
 
 const SCHEMA_CATEGORIES = [
