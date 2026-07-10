@@ -33,9 +33,11 @@ Metadata quality is linted with **`vgi-lint`** (`~/Development/vgi-lint-check`):
 `uv run vgi-lint lint 'bun run /path/to/src/bin/worker.ts' --format agent`. The
 worker documents itself for that linter via `vgi.*` tags on the catalog, schema,
 and every function (doc_llm/doc_md, title, keywords, categories, result-column
-tables, agent_test_tasks, executable_examples) — see `catalog.ts`, the
-`blockFunctionTags()` generator in `functions.ts`, and `resultColumnsMd()` in
-`schemas.ts`.
+schemas, agent_test_tasks, executable_examples) — see `catalog.ts`, the
+`blockFunctionTags()` generator in `functions.ts`, and `resultColumnsSchema()` in
+`schemas.ts`. Runnable examples live in each object's `vgi.example_queries` /
+function `examples` (project columns, not `SELECT *`), never as a ```sql fence in
+a description.
 
 DuckDB attach examples:
 
@@ -65,12 +67,15 @@ must match it, or you get "No worker handles catalog '<name>'".
 
 ## Functions
 
-There are **13 table functions + 6 scalar macros, no catalog tables**: every
-function requires `latitude`/`longitude` (or a `name`) as a *positional*
+There are **13 table functions + 6 scalar macros + 1 view (`weather_codes`)**:
+every function requires `latitude`/`longitude` (or a `name`) as a *positional*
 argument, so there's nothing to `SELECT * FROM table` without `()`. Optional args
 (`timezone`, `forecast_days`, `temperature_unit`, …) are *named* (they have
 defaults). Multi-location is done in SQL (`UNION ALL` / cross join over a
-coordinates table), not via partitioning.
+coordinates table), not via partitioning. `weather_codes` is a browsable, no-arg
+view (the WMO 4677 table) — it satisfies the linter's "browsable relation" nudge
+(VGI146), backs the `weather_code_*` macros, and JOINs to any `weather_code`
+column. It's defined in `catalog.ts` as a `VALUES`-backed `ViewDescriptor`.
 
 **Decoding macros (SQL ergonomics).** The functions return several raw coded
 numbers; `src/macros.ts` adds catalog **macros** that translate them to labels:

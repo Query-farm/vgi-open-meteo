@@ -81,6 +81,19 @@ SELECT open_meteo.main.weather_code_text(61),
 ----
 Slight rain	NW	Unhealthy for Sensitive Groups	Very High
 
+# The weather_codes view is a browsable, no-argument reference relation (the
+# WMO 4677 table). It backs the weather_code_* macros and is JOINable.
+query ITT
+SELECT code, description, emoji FROM open_meteo.main.weather_codes WHERE code IN (0, 95) ORDER BY code;
+----
+0	Clear sky	☀️
+95	Thunderstorm	⛈️
+
+query I
+SELECT count(*) FROM open_meteo.main.weather_codes;
+----
+28
+
 statement ok
 DETACH open_meteo;
 

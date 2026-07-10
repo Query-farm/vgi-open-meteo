@@ -15,8 +15,7 @@ import type { MacroDescriptor } from "vgi";
 
 const HELPERS = "helpers";
 
-// WMO 4677 weather-interpretation code → English description. Shared by the
-// text and emoji macros' docs.
+// WMO 4677 weather-interpretation code → English description.
 const WEATHER_CODE_TEXT = `CASE code
   WHEN 0 THEN 'Clear sky'
   WHEN 1 THEN 'Mainly clear'
@@ -97,201 +96,154 @@ const UV_INDEX_CATEGORY = `CASE
   ELSE 'Extreme'
 END`;
 
-export const WEATHER_MACROS: MacroDescriptor[] = [
-  {
-    name: "weather_code_text",
+/** Compact spec → a fully-documented scalar-macro descriptor. */
+interface MacroSpec {
+  name: string;
+  param: string;
+  paramDoc: string;
+  definition: string;
+  comment: string;
+  keywords: string[];
+  docLlm: string;
+  docMd: string;
+  /** Example that applies the macro to a real column (VGI513), not a literal. */
+  example: { description: string; sql: string };
+}
+
+function scalarMacro(s: MacroSpec): MacroDescriptor {
+  return {
+    name: s.name,
     macroType: "scalar",
-    parameters: ["code"],
-    parameterDocs: { code: "WMO weather-interpretation code from a forecast/historical function." },
+    parameters: [s.param],
+    parameterDocs: { [s.param]: s.paramDoc },
+    definition: s.definition,
+    comment: s.comment,
+    tags: {
+      "vgi.category": HELPERS,
+      "vgi.keywords": JSON.stringify(s.keywords),
+      "vgi.doc_llm": s.docLlm,
+      // Prose only — runnable queries live in vgi.example_queries, not in a
+      // ```sql fence in the description (VGI179).
+      "vgi.doc_md": [`## ${s.name}`, "", s.docMd].join("\n"),
+      "vgi.example_queries": JSON.stringify([s.example]),
+    },
+  };
+}
+
+export const WEATHER_MACROS: MacroDescriptor[] = [
+  scalarMacro({
+    name: "weather_code_text",
+    param: "code",
+    paramDoc: "WMO weather-interpretation code from a forecast/historical function.",
     definition: WEATHER_CODE_TEXT,
     comment: "Translate a WMO weather_code into an English description (e.g. 61 → 'Slight rain').",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["weather code", "wmo", "condition", "description", "decode"]),
-      "vgi.doc_llm":
-        "Maps a WMO 4677 weather_code (the raw number returned by forecast_* and historical_* " +
-        "functions) to a short English description such as 'Clear sky', 'Slight rain' or " +
-        "'Thunderstorm with heavy hail'. Expands inline as SQL — no round-trip. Unknown codes " +
-        "return 'Unknown (<code>)'.",
-      "vgi.doc_md": [
-        "## weather_code_text",
-        "",
-        "Turns the raw WMO `weather_code` (an integer) into an English description.",
-        "",
-        "```sql",
-        "SELECT time, temperature_2m, open_meteo.main.weather_code_text(weather_code) AS conditions",
-        "FROM open_meteo.main.forecast_hourly(52.52, 13.41)",
-        "ORDER BY time;",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "Decode the current weather code to text.",
-          sql: "SELECT open_meteo.main.weather_code_text(61) AS conditions",
-        },
-      ]),
+    keywords: ["weather code", "wmo", "condition", "description", "decode"],
+    docLlm:
+      "Maps a WMO 4677 weather_code (the raw number returned by forecast_* and historical_* " +
+      "functions) to a short English description such as 'Clear sky', 'Slight rain' or " +
+      "'Thunderstorm with heavy hail'. Expands inline as SQL — no round-trip. Unknown codes " +
+      "return 'Unknown (<code>)'.",
+    docMd:
+      "Turns the raw WMO `weather_code` (an integer) into an English description. Apply it to " +
+      "the `weather_code` column of any forecast or historical function; see this macro's example " +
+      "queries for a runnable form.",
+    example: {
+      description: "Decode the current weather code to text.",
+      sql: "SELECT weather_code, open_meteo.main.weather_code_text(weather_code) AS conditions FROM open_meteo.main.forecast_current(52.52, 13.41)",
     },
-  },
-  {
+  }),
+  scalarMacro({
     name: "weather_code_emoji",
-    macroType: "scalar",
-    parameters: ["code"],
-    parameterDocs: { code: "WMO weather-interpretation code from a forecast/historical function." },
+    param: "code",
+    paramDoc: "WMO weather-interpretation code from a forecast/historical function.",
     definition: WEATHER_CODE_EMOJI,
     comment: "Map a WMO weather_code to a representative weather emoji (e.g. 95 → ⛈️).",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["weather code", "wmo", "emoji", "icon", "condition"]),
-      "vgi.doc_llm":
-        "Maps a WMO 4677 weather_code to a single representative weather emoji (☀️ clear, ⛅ partly " +
-        "cloudy, 🌧️ rain, 🌨️ snow, ⛈️ thunderstorm, 🌫️ fog). Handy for compact, human-facing " +
-        "dashboards. Unknown codes return ❓.",
-      "vgi.doc_md": [
-        "## weather_code_emoji",
-        "",
-        "Maps the raw WMO `weather_code` to one weather emoji — a compact companion to " +
-          "`weather_code_text` for display.",
-        "",
-        "```sql",
-        "SELECT open_meteo.main.weather_code_emoji(weather_code) AS icon,",
-        "       open_meteo.main.weather_code_text(weather_code)  AS conditions",
-        "FROM open_meteo.main.forecast_current(52.52, 13.41);",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "Weather emoji for a thunderstorm code.",
-          sql: "SELECT open_meteo.main.weather_code_emoji(95) AS icon",
-        },
-      ]),
+    keywords: ["weather code", "wmo", "emoji", "icon", "condition"],
+    docLlm:
+      "Maps a WMO 4677 weather_code to a single representative weather emoji (☀️ clear, ⛅ partly " +
+      "cloudy, 🌧️ rain, 🌨️ snow, ⛈️ thunderstorm, 🌫️ fog). Handy for compact, human-facing " +
+      "dashboards. Unknown codes return ❓.",
+    docMd:
+      "Maps the raw WMO `weather_code` to one weather emoji — a compact companion to " +
+      "`weather_code_text` for display. See this macro's example queries for a runnable form.",
+    example: {
+      description: "Weather emoji for the current conditions.",
+      sql: "SELECT weather_code, open_meteo.main.weather_code_emoji(weather_code) AS icon FROM open_meteo.main.forecast_current(52.52, 13.41)",
     },
-  },
-  {
+  }),
+  scalarMacro({
     name: "wind_compass",
-    macroType: "scalar",
-    parameters: ["degrees"],
-    parameterDocs: { degrees: "Wind (or wave) bearing the flow comes from, in meteorological degrees." },
+    param: "degrees",
+    paramDoc: "Wind (or wave) bearing the flow comes from, in meteorological degrees.",
     definition: WIND_COMPASS,
     comment: "Convert a bearing in degrees to a 16-point compass abbreviation (e.g. 315 → 'NW').",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["wind", "direction", "bearing", "compass", "cardinal"]),
-      "vgi.doc_llm":
-        "Converts a bearing in degrees (0–360, meteorological — the direction the flow comes from) " +
-        "into a 16-point compass abbreviation like N, ENE or SW. Works for wind_direction_10m, the " +
-        "daily dominant direction, and marine wave/swell directions. NULL in, NULL out.",
-      "vgi.doc_md": [
-        "## wind_compass",
-        "",
-        "Converts a degree bearing to a 16-point compass point (`N`, `NNE`, … `NNW`).",
-        "",
-        "```sql",
-        "SELECT wind_speed_10m,",
-        "       open_meteo.main.wind_compass(wind_direction_10m) AS from_dir",
-        "FROM open_meteo.main.forecast_current(52.52, 13.41);",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "315 degrees is a north-westerly.",
-          sql: "SELECT open_meteo.main.wind_compass(315) AS compass",
-        },
-      ]),
+    keywords: ["wind", "direction", "bearing", "compass", "cardinal"],
+    docLlm:
+      "Converts a bearing in degrees (0–360, meteorological — the direction the flow comes from) " +
+      "into a 16-point compass abbreviation like N, ENE or SW. Works for wind_direction_10m, the " +
+      "daily dominant direction, and marine wave/swell directions. NULL in, NULL out.",
+    docMd:
+      "Converts a degree bearing to a 16-point compass point (`N`, `NNE`, … `NNW`). Apply it to a " +
+      "`wind_direction_*` or wave-direction column; see this macro's example queries for a runnable form.",
+    example: {
+      description: "Current wind direction as a compass point.",
+      sql: "SELECT wind_direction_10m, open_meteo.main.wind_compass(wind_direction_10m) AS from_dir FROM open_meteo.main.forecast_current(52.52, 13.41)",
     },
-  },
-  {
+  }),
+  scalarMacro({
     name: "us_aqi_category",
-    macroType: "scalar",
-    parameters: ["aqi"],
-    parameterDocs: { aqi: "US Air Quality Index value from an air_quality function (us_aqi column)." },
+    param: "aqi",
+    paramDoc: "US Air Quality Index value from an air_quality function (us_aqi column).",
     definition: US_AQI_CATEGORY,
     comment: "Bucket a US AQI value into its EPA category (e.g. 120 → 'Unhealthy for Sensitive Groups').",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["air quality", "aqi", "us aqi", "epa", "pollution"]),
-      "vgi.doc_llm":
-        "Buckets a US Air Quality Index value (the us_aqi column from air_quality_* functions) into " +
-        "its EPA category: Good, Moderate, Unhealthy for Sensitive Groups, Unhealthy, Very Unhealthy, " +
-        "or Hazardous. NULL in, NULL out.",
-      "vgi.doc_md": [
-        "## us_aqi_category",
-        "",
-        "Maps a US AQI number to its EPA health category.",
-        "",
-        "```sql",
-        "SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category",
-        "FROM open_meteo.main.air_quality_current(34.05, -118.24);",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "A US AQI of 120 is unhealthy for sensitive groups.",
-          sql: "SELECT open_meteo.main.us_aqi_category(120) AS category",
-        },
-      ]),
+    keywords: ["air quality", "aqi", "us aqi", "epa", "pollution"],
+    docLlm:
+      "Buckets a US Air Quality Index value (the us_aqi column from air_quality_* functions) into " +
+      "its EPA category: Good, Moderate, Unhealthy for Sensitive Groups, Unhealthy, Very Unhealthy, " +
+      "or Hazardous. NULL in, NULL out.",
+    docMd:
+      "Maps a US AQI number to its EPA health category. Apply it to the `us_aqi` column of an " +
+      "air_quality function; see this macro's example queries for a runnable form.",
+    example: {
+      description: "US AQI category for current conditions in Los Angeles.",
+      sql: "SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category FROM open_meteo.main.air_quality_current(34.05, -118.24)",
     },
-  },
-  {
+  }),
+  scalarMacro({
     name: "european_aqi_category",
-    macroType: "scalar",
-    parameters: ["aqi"],
-    parameterDocs: { aqi: "European Air Quality Index value from an air_quality function (european_aqi column)." },
+    param: "aqi",
+    paramDoc: "European Air Quality Index value from an air_quality function (european_aqi column).",
     definition: EUROPEAN_AQI_CATEGORY,
     comment: "Bucket a European AQI value into its CAMS band (e.g. 75 → 'Poor').",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["air quality", "aqi", "european aqi", "cams", "pollution"]),
-      "vgi.doc_llm":
-        "Buckets a European Air Quality Index value (the european_aqi column from air_quality_* " +
-        "functions) into its CAMS band: Good, Fair, Moderate, Poor, Very Poor, or Extremely Poor. " +
-        "The European scale differs from the US one, so use the matching macro. NULL in, NULL out.",
-      "vgi.doc_md": [
-        "## european_aqi_category",
-        "",
-        "Maps a European AQI number to its CAMS band (distinct from the US scale).",
-        "",
-        "```sql",
-        "SELECT european_aqi, open_meteo.main.european_aqi_category(european_aqi) AS band",
-        "FROM open_meteo.main.air_quality_current(52.52, 13.41);",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "A European AQI of 75 is poor.",
-          sql: "SELECT open_meteo.main.european_aqi_category(75) AS band",
-        },
-      ]),
+    keywords: ["air quality", "aqi", "european aqi", "cams", "pollution"],
+    docLlm:
+      "Buckets a European Air Quality Index value (the european_aqi column from air_quality_* " +
+      "functions) into its CAMS band: Good, Fair, Moderate, Poor, Very Poor, or Extremely Poor. " +
+      "The European scale differs from the US one, so use the matching macro. NULL in, NULL out.",
+    docMd:
+      "Maps a European AQI number to its CAMS band (distinct from the US scale). Apply it to the " +
+      "`european_aqi` column of an air_quality function; see this macro's example queries for a runnable form.",
+    example: {
+      description: "European AQI band for current conditions in Berlin.",
+      sql: "SELECT european_aqi, open_meteo.main.european_aqi_category(european_aqi) AS band FROM open_meteo.main.air_quality_current(52.52, 13.41)",
     },
-  },
-  {
+  }),
+  scalarMacro({
     name: "uv_index_category",
-    macroType: "scalar",
-    parameters: ["uv"],
-    parameterDocs: { uv: "UV index value from a forecast or air_quality function (uv_index column)." },
+    param: "uv",
+    paramDoc: "UV index value from a forecast or air_quality function (uv_index column).",
     definition: UV_INDEX_CATEGORY,
     comment: "Bucket a UV index into its WHO exposure category (e.g. 9 → 'Very High').",
-    tags: {
-      "vgi.category": HELPERS,
-      "vgi.keywords": JSON.stringify(["uv", "uv index", "sun", "exposure", "who"]),
-      "vgi.doc_llm":
-        "Buckets a UV index value (the uv_index column from forecast_* and air_quality_* functions) " +
-        "into its WHO exposure category: Low, Moderate, High, Very High, or Extreme. NULL in, NULL out.",
-      "vgi.doc_md": [
-        "## uv_index_category",
-        "",
-        "Maps a UV index number to its WHO exposure-risk category.",
-        "",
-        "```sql",
-        "SELECT uv_index, open_meteo.main.uv_index_category(uv_index) AS risk",
-        "FROM open_meteo.main.forecast_hourly(52.52, 13.41);",
-        "```",
-      ].join("\n"),
-      "vgi.example_queries": JSON.stringify([
-        {
-          description: "A UV index of 9 is very high.",
-          sql: "SELECT open_meteo.main.uv_index_category(9) AS risk",
-        },
-      ]),
+    keywords: ["uv", "uv index", "sun", "exposure", "who"],
+    docLlm:
+      "Buckets a UV index value (the uv_index column from forecast_* and air_quality_* functions) " +
+      "into its WHO exposure category: Low, Moderate, High, Very High, or Extreme. NULL in, NULL out.",
+    docMd:
+      "Maps a UV index number to its WHO exposure-risk category. Apply it to the `uv_index` column " +
+      "of a forecast or air_quality function; see this macro's example queries for a runnable form.",
+    example: {
+      description: "UV-index risk category over the next day of hourly forecast.",
+      sql: "SELECT time, uv_index, open_meteo.main.uv_index_category(uv_index) AS risk FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) ORDER BY time",
     },
-  },
+  }),
 ];

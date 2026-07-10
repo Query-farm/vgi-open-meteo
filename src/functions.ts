@@ -21,7 +21,7 @@ import {
 import type { ArgumentConstraints } from "vgi";
 
 import { ENDPOINTS, type EndpointConfig } from "./endpoints.js";
-import { blockSchema, ELEVATION_SCHEMA, GEOCODING_SCHEMA, resultColumnsMd } from "./schemas.js";
+import { blockSchema, ELEVATION_SCHEMA, GEOCODING_SCHEMA, resultColumnsSchema } from "./schemas.js";
 
 // Catalog-qualified name for example SQL. VGI example rules (and DuckDB itself,
 // once the catalog is ATTACHed under a non-default alias) require references to
@@ -124,7 +124,6 @@ function blockFunctionTags(
         ? "returns one row per day"
         : "returns one row per hour";
 
-  const reqPos = config.args.dateRange ? ", '2024-06-01', '2024-06-07'" : "";
   const extras: string[] = [];
   if (config.args.dateRange) extras.push("a start_date/end_date range is required (yyyy-mm-dd)");
   if (config.args.forecastDays) extras.push("the window is set with forecast_days / past_days");
@@ -132,6 +131,12 @@ function blockFunctionTags(
   if (config.args.models) extras.push("specific models can be selected with the models argument");
   if (config.args.timezone) extras.push("timezone only shifts how daily buckets are aligned — instants stay UTC");
   const extraNote = extras.length ? ` Notes: ${extras.join("; ")}.` : "";
+
+  const cols = config.variables.slice(0, 3).map((v) => `\`${v.name}\``).join(", ");
+  const hasWeatherCode = config.variables.some((v) => v.name === "weather_code");
+  const decodeNote = hasWeatherCode
+    ? " Decode the `weather_code` column with the `weather_code_text` / `weather_code_emoji` macros."
+    : "";
 
   const docLlm =
     `Point weather query returning ${config.block} values from the Open-Meteo API. ` +
@@ -146,15 +151,15 @@ function blockFunctionTags(
     `Pass \`latitude\` and \`longitude\` in WGS84 degrees. The function ${rowPhrase}; ` +
       `every timestamp is emitted in UTC.${extraNote}`,
     "",
-    "```sql",
-    `SELECT * FROM ${QUALIFY(config.name)}(52.52, 13.41${reqPos})`,
-    "```",
+    `Returned columns are \`time\` plus ${cols} and more — see the result schema for the ` +
+      `full set with types.${decodeNote} Runnable queries live in this function's example ` +
+      `queries rather than inline here.`,
   ].join("\n");
 
   return {
     "vgi.doc_llm": docLlm,
     "vgi.doc_md": docMd,
-    "vgi.result_columns_md": resultColumnsMd(outputSchema),
+    "vgi.result_columns_schema": resultColumnsSchema(outputSchema),
     "vgi.category": config.category,
   };
 }
@@ -180,9 +185,14 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   // start_date/end_date are REQUIRED positional args for the archive/climate
   // endpoints, so every example for those must supply them.
   const reqPos = config.args.dateRange ? ", '2024-06-01', '2024-06-07'" : "";
+  // Project a few representative columns instead of `SELECT *`, so each example
+  // teaches which columns matter (and isn't a low-effort star dump). `current`
+  // is a single row; the rest get an explicit ORDER BY time.
+  const preview = ["time", ...config.variables.slice(0, 2).map((v) => v.name)].join(", ");
+  const order = isCurrent ? "" : " ORDER BY time";
   const examples: { sql: string; description: string }[] = [
     {
-      sql: `SELECT * FROM ${qname}(52.52, 13.41${reqPos})`,
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41${reqPos})${order}`,
       description: config.args.dateRange
         ? `${base} over an explicit date range (Berlin).`
         : `${base} (Berlin).`,
@@ -191,25 +201,25 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   if (config.args.forecastDays) {
     const tz = config.args.timezone ? ", timezone := 'auto'" : "";
     examples.push({
-      sql: `SELECT * FROM ${qname}(52.52, 13.41, forecast_days := 3${tz})`,
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41, forecast_days := 3${tz})${order}`,
       description: config.args.timezone
         ? "Next 3 days, daily buckets in the location's local time zone."
         : "Next 3 days.",
     });
     examples.push({
-      sql: `SELECT * FROM ${qname}(52.52, 13.41, past_days := 7, forecast_days := 0)`,
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41, past_days := 7, forecast_days := 0)${order}`,
       description: "The past 7 days instead of the forecast window.",
     });
   }
   if (config.args.units) {
     examples.push({
-      sql: `SELECT * FROM ${qname}(52.52, 13.41${reqPos}, temperature_unit := 'fahrenheit', wind_speed_unit := 'mph')`,
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41${reqPos}, temperature_unit := 'fahrenheit', wind_speed_unit := 'mph')${order}`,
       description: "Imperial units (°F, mph).",
     });
   }
   if (config.args.models && config.defaultModels) {
     examples.push({
-      sql: `SELECT * FROM ${qname}(52.52, 13.41, '2040-01-01', '2040-12-31', models := 'MRI_AGCM3_2_S,EC_Earth3P_HR')`,
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41, '2040-01-01', '2040-12-31', models := 'MRI_AGCM3_2_S,EC_Earth3P_HR')${order}`,
       description: "Pick specific downscaled climate models.",
     });
   }
@@ -319,11 +329,9 @@ const geocoding = defineTableFunction<GeocodingArgs>({
       "",
       "This is the name → coordinate bridge for the rest of the catalog: read the `latitude`/`longitude` of a match, then call a `forecast_*`, `marine_*`, `air_quality_*` or `elevation` function with those numbers. Arguments must be literals, so do it as two steps rather than a correlated join.",
       "",
-      "```sql",
-      "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Berlin', count := 5)",
-      "```",
+      "Key columns are `name`, `latitude`, `longitude`, `country` and the `admin1`–`admin4` regions; see the result schema for the full set. Runnable queries are in this function's example queries.",
     ].join("\n"),
-    "vgi.result_columns_md": resultColumnsMd(GEOCODING_SCHEMA),
+    "vgi.result_columns_schema": resultColumnsSchema(GEOCODING_SCHEMA),
   },
   onBind: () => ({ outputSchema: GEOCODING_SCHEMA }),
   cardinality: () => ({ estimate: 10, max: 100 }),
@@ -371,7 +379,10 @@ const geocoding = defineTableFunction<GeocodingArgs>({
     out.finish();
   },
   examples: [
-    { sql: "SELECT * FROM open_meteo.main.geocoding('Berlin')", description: "Find places named Berlin." },
+    {
+      sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Berlin')",
+      description: "Find places named Berlin.",
+    },
     {
       sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Springfield', count := 20)",
       description: "Up to 20 matches (coordinates feed the forecast_* functions).",
@@ -418,13 +429,9 @@ const elevation = defineTableFunction<ElevationArgs>({
       "",
       "Terrain elevation (metres above sea level) for a coordinate, sampled from a 90 m digital elevation model (Copernicus DEM).",
       "",
-      "Returns exactly one row: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null when the model has no value for the point (e.g. open ocean).",
-      "",
-      "```sql",
-      "SELECT elevation FROM open_meteo.main.elevation(52.52, 13.41)",
-      "```",
+      "Returns exactly one row: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null when the model has no value for the point (e.g. open ocean). See the result schema for column types; runnable queries are in this function's example queries.",
     ].join("\n"),
-    "vgi.result_columns_md": resultColumnsMd(ELEVATION_SCHEMA),
+    "vgi.result_columns_schema": resultColumnsSchema(ELEVATION_SCHEMA),
   },
   onBind: () => ({ outputSchema: ELEVATION_SCHEMA }),
   cardinality: () => ({ estimate: 1, max: 1 }),
@@ -451,7 +458,7 @@ const elevation = defineTableFunction<ElevationArgs>({
   },
   examples: [
     { sql: "SELECT elevation FROM open_meteo.main.elevation(52.52, 13.41)", description: "Terrain elevation at Berlin (metres)." },
-    { sql: "SELECT * FROM open_meteo.main.elevation(27.99, 86.93)", description: "Near the summit of Everest." },
+    { sql: "SELECT latitude, longitude, elevation FROM open_meteo.main.elevation(27.99, 86.93)", description: "Near the summit of Everest." },
   ],
 });
 

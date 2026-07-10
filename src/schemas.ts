@@ -67,15 +67,19 @@ function sqlTypeName(type: VgiDataType): string {
 }
 
 /**
- * Render a schema as a Markdown column table for the `vgi.result_columns_md`
- * tag. Table functions have a dynamic schema DuckDB can't expose up front, so
- * this documents the returned columns (name, type, meaning) for agents/humans.
+ * Serialize a static result schema for the `vgi.result_columns_schema` tag: a
+ * JSON array of {name, type, description}. Table functions have no backing table
+ * DuckDB can introspect, so this declares the exact returned columns (and the
+ * types must match what the function actually emits — checked under --execute).
  */
-export function resultColumnsMd(sch: VgiSchema): string {
-  const rows = sch.fields.map(
-    (f) => `| \`${f.name}\` | ${sqlTypeName(f.type)} | ${f.metadata.get("comment") ?? ""} |`,
+export function resultColumnsSchema(sch: VgiSchema): string {
+  return JSON.stringify(
+    sch.fields.map((f) => ({
+      name: f.name,
+      type: sqlTypeName(f.type),
+      description: f.metadata.get("comment") ?? "",
+    })),
   );
-  return ["| Column | Type | Description |", "| --- | --- | --- |", ...rows].join("\n");
 }
 
 /** Arrow type for a weather variable's kind. */
