@@ -118,6 +118,19 @@ function withArgConstraints(
   return fn;
 }
 
+/**
+ * Encode `examples` as the `vgi.example_queries` tag.
+ *
+ * The SDK's `examples` reach DuckDB through `duckdb_functions().examples`,
+ * which carries the SQL and drops the description on the way. Discovery tools
+ * read descriptions from this tag instead (vgi-lint VGI515), and merge the two
+ * carriers by normalised SQL — so emitting both surfaces each query once, with
+ * its description intact.
+ */
+function exampleQueriesTag(examples: { sql: string; description: string }[]): string {
+  return JSON.stringify(examples.map((e) => ({ description: e.description, sql: e.sql })));
+}
+
 /** Read a column's value at `row`, normalised to `null` when absent. */
 function cell(batch: VgiBatch, name: string, row: number): unknown {
   const v = batch.getChild(name)?.get(row);
@@ -334,7 +347,10 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
     argDocs,
     projectionPushdown: true,
     categories: config.categories,
-    tags: blockFunctionTags(config, outputSchema),
+    tags: {
+      ...blockFunctionTags(config, outputSchema),
+      "vgi.example_queries": exampleQueriesTag(examples),
+    },
     onBind: () => ({ outputSchema }),
     process: async (params, batch, out) => {
       const apikey = apiKeyFromParams(params);
@@ -420,6 +436,27 @@ interface GeocodingArgs {
   country_code: string;
 }
 
+const GEOCODING_EXAMPLES = [
+    {
+      sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Berlin')",
+      description: "Find places named Berlin.",
+    },
+    {
+      sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Springfield', count := 20)",
+      description: "Up to 20 matches (coordinates feed the forecast_* functions).",
+    },
+    {
+      sql: "SELECT name, latitude, longitude FROM open_meteo.main.geocoding('München', language := 'de', country_code := 'DE')",
+      description: "Localized search restricted to one country.",
+    },
+    {
+      sql:
+        "SELECT p.city, g.name, g.latitude, g.longitude FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
+        "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g",
+      description: "Resolve a whole column of place names in one correlated join.",
+    },
+];
+
 const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   name: "geocoding",
   description: "Search places by name and return their coordinates (Open-Meteo geocoding).",
@@ -443,6 +480,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   autoApplyFilters: true,
   categories: ["weather", "geocoding", "reference"],
   tags: {
+    "vgi.example_queries": exampleQueriesTag(GEOCODING_EXAMPLES),
     "vgi.category": "geocoding",
     "vgi.doc_llm":
       "Forward geocoding: search Open-Meteo's place-name database and get coordinates back. " +
@@ -455,7 +493,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
       "",
       "Search places by name and return their coordinates and metadata (country, administrative regions, timezone, elevation, population).",
       "",
-      "This is the name → coordinate bridge for the rest of the catalog: read the `latitude`/`longitude` of a match, then call a `forecast_*`, `marine_*`, `air_quality_*` or `elevation` function with those numbers. Both sides accept column references, so the bridge is a single correlated join — `FROM places, LATERAL geocoding(places.city), LATERAL forecast_current(geocoding.latitude, geocoding.longitude)` — rather than two steps.",
+      "This is the name → coordinate bridge for the rest of the catalog: read the `latitude`/`longitude` of a match, then feed them to a `forecast_*`, `marine_*`, `air_quality_*` or `elevation` function. Both sides take column references, so the bridge is one correlated join rather than two steps — the last example query joins a column of place names straight through to current weather.",
       "",
       "Key columns are `name`, `latitude`, `longitude`, `country` and the `admin1`–`admin4` regions; see the result schema for the full set. Runnable queries are in this function's example queries.",
     ].join("\n"),
@@ -526,26 +564,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
       parentRowsMetadata(parentRows, parentRows.length),
     );
   },
-  examples: [
-    {
-      sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Berlin')",
-      description: "Find places named Berlin.",
-    },
-    {
-      sql: "SELECT name, latitude, longitude, country FROM open_meteo.main.geocoding('Springfield', count := 20)",
-      description: "Up to 20 matches (coordinates feed the forecast_* functions).",
-    },
-    {
-      sql: "SELECT name, latitude, longitude FROM open_meteo.main.geocoding('München', language := 'de', country_code := 'DE')",
-      description: "Localized search restricted to one country.",
-    },
-    {
-      sql:
-        "SELECT p.city, g.name, g.latitude, g.longitude FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
-        "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g",
-      description: "Resolve a whole column of place names in one correlated join.",
-    },
-  ],
+  examples: GEOCODING_EXAMPLES,
 });
 
 const geocoding = withArgConstraints(geocodingBase, {
@@ -569,6 +588,17 @@ interface ElevationArgs {
  *  serves 100 input rows instead of 100 calls. */
 const ELEVATION_BATCH = 100;
 
+const ELEVATION_EXAMPLES = [
+    { sql: "SELECT elevation FROM open_meteo.main.elevation(52.52, 13.41)", description: "Terrain elevation at Berlin (metres)." },
+    { sql: "SELECT latitude, longitude, elevation FROM open_meteo.main.elevation(27.99, 86.93)", description: "Near the summit of Everest." },
+    {
+      sql:
+        "SELECT c.name, e.elevation FROM (VALUES ('Berlin', 52.52, 13.41), ('Everest', 27.99, 86.93)) AS c(name, lat, lon), " +
+        "LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e",
+      description: "Elevation for a whole table of coordinates in one correlated join.",
+    },
+];
+
 const elevationBase = defineRowTransformFunction<ElevationArgs>({
   name: "elevation",
   description: "Terrain elevation (90m DEM) for a coordinate (Open-Meteo elevation).",
@@ -580,6 +610,7 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
   projectionPushdown: true,
   categories: ["weather", "reference"],
   tags: {
+    "vgi.example_queries": exampleQueriesTag(ELEVATION_EXAMPLES),
     "vgi.category": "reference",
     "vgi.doc_llm":
       "Terrain elevation for a coordinate, from Open-Meteo's 90 m digital elevation model. " +
@@ -591,7 +622,7 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
       "",
       "Terrain elevation (metres above sea level) for a coordinate, sampled from a 90 m digital elevation model (Copernicus DEM).",
       "",
-      "Returns exactly one row: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null when the model has no value for the point (e.g. open ocean). See the result schema for column types; runnable queries are in this function's example queries.",
+      "Returns exactly one row per coordinate: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null where the model has no value for the point (open ocean, for instance). Coordinates may come from a column, and the endpoint takes them in batches of 100, so resolving a whole table of points costs one request per 100 rows rather than one per row.",
     ].join("\n"),
     "vgi.result_columns_schema": resultColumnsSchema(ELEVATION_SCHEMA),
   },
@@ -647,16 +678,7 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
       parentRowsMetadata(parentRows, parentRows.length),
     );
   },
-  examples: [
-    { sql: "SELECT elevation FROM open_meteo.main.elevation(52.52, 13.41)", description: "Terrain elevation at Berlin (metres)." },
-    { sql: "SELECT latitude, longitude, elevation FROM open_meteo.main.elevation(27.99, 86.93)", description: "Near the summit of Everest." },
-    {
-      sql:
-        "SELECT c.name, e.elevation FROM (VALUES ('Berlin', 52.52, 13.41), ('Everest', 27.99, 86.93)) AS c(name, lat, lon), " +
-        "LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e",
-      description: "Elevation for a whole table of coordinates in one correlated join.",
-    },
-  ],
+  examples: ELEVATION_EXAMPLES,
 });
 
 const elevation = withArgConstraints(elevationBase, {
