@@ -23,9 +23,13 @@ jobs:
         with:
           bun-version: latest
 
+      # 22, not the 20 in `engines`: that floor is what CONSUMERS need, while
+      # this job runs `npm install -g npm@latest`, and current npm refuses to
+      # install on node 20 (EBADENGINE). CI's smoke test still runs the bundle
+      # on 20 so the published floor stays honest.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
       # npm >= 11.5.1 for trusted publishing / provenance.
