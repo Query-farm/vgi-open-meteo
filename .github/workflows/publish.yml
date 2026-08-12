@@ -68,7 +68,11 @@ jobs:
           kill "$pid" 2>/dev/null || true
           grep -q "calling run()" /tmp/worker.log || { cat /tmp/worker.log; exit 1; }
 
+      # No NODE_AUTH_TOKEN: this publishes through npm trusted publishing, the
+      # same as the other Query Farm packages. The `id-token: write` permission
+      # above is the credential — npm verifies the OIDC token against the
+      # trusted publisher configured for this package, and mints provenance
+      # from it. An empty NPM_TOKEN here does not fall back gracefully; it
+      # makes npm demand token auth and fail with ENEEDAUTH.
       - name: Publish
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
