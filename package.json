@@ -13,8 +13,8 @@
     "cf:deploy": "wrangler deploy"
   },
   "dependencies": {
-    "vgi": "npm:@query-farm/vgi@^0.12.0",
-    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.9.0",
+    "vgi": "npm:@query-farm/vgi@^0.25.3",
+    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.19.3",
     "@query-farm/apache-arrow": "^21.1.1",
     "jose": "^6.2.3"
   },
