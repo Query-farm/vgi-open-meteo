@@ -1,4 +1,16 @@
-# vgi-open-meteo
+<p align="center">
+  <img src="assets/vgi-logo.png" alt="Vector Gateway Interface" width="320">
+</p>
+
+<h1 align="center">vgi-open-meteo</h1>
+
+<p align="center">
+  <a href="https://open-meteo.com"><img alt="Data: Open-Meteo" src="https://img.shields.io/badge/data-Open--Meteo-0A9396"></a>
+  <a href="https://github.com/Query-farm"><img alt="DuckDB: VGI extension" src="https://img.shields.io/badge/DuckDB-VGI%20extension-FFF000?logo=duckdb&logoColor=black"></a>
+  <a href="https://vgi-open-meteo.rusty-bb6.workers.dev"><img alt="Live on Cloudflare Workers" src="https://img.shields.io/badge/live-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white"></a>
+  <img alt="vgi-lint score 100/100" src="https://img.shields.io/badge/vgi--lint-100%2F100-brightgreen">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
 
 Query the [Open-Meteo](https://open-meteo.com) weather API family directly from
 **DuckDB** as SQL table functions, via the [VGI](https://github.com/Query-farm)
