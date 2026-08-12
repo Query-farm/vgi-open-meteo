@@ -83,26 +83,36 @@ FROM m.main.forecast_hourly(52.52, 13.41, forecast_days := 1)
 ORDER BY time;
 ```
 
-## Place names → weather (two steps)
+## Place names → weather, in one query
 
-VGI table-function arguments must be **literals** — DuckDB rejects
-correlated/`LATERAL` column references. So going from a place name to its weather
-is a two-step: read the coordinates from `geocoding(...)`, then call a forecast
-function with those numbers.
+Positional arguments accept **columns**, not just literals, so a place name can
+flow straight through to its weather in a single statement — `geocoding` turns
+the name into coordinates and the forecast function reads them from its row:
 
 ```sql
--- 1. find coordinates
-SELECT name, admin1, latitude, longitude
-FROM m.main.geocoding('Glen Allen', count := 5, country_code := 'US');
---   → Glen Allen, Virginia ≈ 37.66542, -77.49359
-
--- 2. current weather there
-SELECT temperature_2m, m.main.weather_code_text(weather_code) AS conditions
-FROM m.main.forecast_current(37.66542, -77.49359);
+SELECT g.name,
+       g.admin1,
+       round(w.temperature_2m, 1)                AS temp_c,
+       m.main.weather_code_emoji(w.weather_code) AS icon,
+       m.main.weather_code_text(w.weather_code)  AS conditions
+FROM m.main.geocoding('Glen Allen', count := 1, country_code := 'US') AS g,
+     LATERAL m.main.forecast_current(g.latitude, g.longitude) AS w;
 ```
 
-For several locations, cross-join a coordinates table with `UNION ALL` rather
-than a correlated join.
+The same shape does many places at once — a join, not a `UNION ALL` per site:
+
+```sql
+SELECT p.city,
+       round(w.temperature_2m, 1)               AS temp_c,
+       m.main.weather_code_text(w.weather_code) AS conditions
+FROM (VALUES ('Berlin'), ('Tokyo'), ('Glen Allen')) AS p(city),
+     LATERAL m.main.geocoding(p.city, count := 1) AS g,
+     LATERAL m.main.forecast_current(g.latitude, g.longitude) AS w
+ORDER BY p.city;
+```
+
+Literals still work exactly as before — `forecast_current(37.66542, -77.49359)`
+is the same function, called with a one-row input.
 
 ## Units and options
 
