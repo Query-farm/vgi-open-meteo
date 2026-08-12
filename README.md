@@ -5,6 +5,8 @@
 <h1 align="center">vgi-open-meteo</h1>
 
 <p align="center">
+  <a href="https://www.npmjs.com/package/@query-farm/vgi-open-meteo"><img alt="npm" src="https://img.shields.io/npm/v/@query-farm/vgi-open-meteo?logo=npm&color=CB3837"></a>
+  <a href="https://github.com/Query-farm/vgi-open-meteo/pkgs/container/vgi-open-meteo"><img alt="Container image" src="https://img.shields.io/badge/ghcr.io-image-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://open-meteo.com"><img alt="Data: Open-Meteo" src="https://img.shields.io/badge/data-Open--Meteo-0A9396"></a>
   <a href="https://github.com/Query-farm"><img alt="DuckDB: VGI extension" src="https://img.shields.io/badge/DuckDB-VGI%20extension-FFF000?logo=duckdb&logoColor=black"></a>
   <a href="https://vgi-open-meteo.rusty-bb6.workers.dev"><img alt="Live on Cloudflare Workers" src="https://img.shields.io/badge/live-Cloudflare%20Workers-F38020?logo=cloudflare&logoColor=white"></a>
@@ -25,19 +27,44 @@ The catalog name is **`open_meteo`** — the first string in `ATTACH '<name>'`
 must be exactly that. Pick a transport:
 
 ```sql
--- Hosted Cloudflare Worker (no setup)
+-- Hosted Cloudflare Worker (nothing to install)
 ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'https://vgi-open-meteo.rusty-bb6.workers.dev');
 
--- Local stdio worker (runs the worker as a subprocess)
-ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'bun run /path/to/vgi-open-meteo/src/bin/worker.ts');
+-- Run the worker yourself, straight from npm. DuckDB spawns it as a
+-- subprocess and talks VGI over stdin/stdout; -y skips the install prompt.
+ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'npx -y @query-farm/vgi-open-meteo');
 
--- Local / self-hosted HTTP server
+-- Self-hosted HTTP server (see Docker, below)
 ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'http://localhost:8000');
+
+-- From a clone, without installing anything
+ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'bun run /path/to/vgi-open-meteo/src/bin/worker.ts');
 ```
 
 `TYPE vgi` requires a DuckDB build with the VGI extension (e.g.
 [haybarn](https://github.com/Query-farm)); `httpfs` is auto-loaded for the HTTP
 transports.
+
+### Run it yourself
+
+The npm package is a single self-contained bundle — no transitive installs, and
+it runs on plain **node** (>= 20), which is what `npx` gives you:
+
+```bash
+npx -y @query-farm/vgi-open-meteo     # speaks VGI on stdin/stdout
+```
+
+Or serve it over HTTP with the container image, which is what you want for a
+shared deployment:
+
+```bash
+docker run --rm -p 8000:8000 ghcr.io/query-farm/vgi-open-meteo:latest
+curl -s localhost:8000/health
+```
+
+Set `VGI_SIGNING_KEY` to a stable secret in any real deployment — without one
+the server mints a random key at boot, and state tokens stop working across a
+restart.
 
 ## Quick start
 

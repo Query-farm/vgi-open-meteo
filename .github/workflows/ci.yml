@@ -1,0 +1,123 @@
+# Build gates that run on every push and PR.
+#
+# The sqllogictest suite is deliberately NOT here: it needs a DuckDB built with
+# the vgi + httpfs extensions statically linked, and it queries the live
+# Open-Meteo API. Both are real dependencies to stand up in CI, and a suite that
+# fails when a third-party weather API rate-limits teaches nothing. What runs
+# here is what CI can answer deterministically — does it typecheck, does the
+# published bundle build, and does that bundle actually start under plain node.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck + npm bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # node, not bun, runs the published bin — npx hands you node. The smoke
+      # test below is the only place that assumption gets checked.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build the npm bundle
+        run: bun run build:npm
+
+      - name: Smoke-test the bundle under node
+        # The bundle is self-contained and the banner polyfills `require` for
+        # vgi-rpc's synchronous stdio writer. Both are easy to break silently in
+        # a dependency bump, and the failure mode is a worker that dies on its
+        # first write — long after `npx` reports success. Starting it and
+        # watching for the readiness line catches that here instead.
+        run: |
+          node dist/worker.mjs > /tmp/worker.log 2>&1 &
+          pid=$!
+          for _ in $(seq 1 40); do
+            grep -q "calling run()" /tmp/worker.log && break
+            sleep 0.25
+          done
+          kill "$pid" 2>/dev/null || true
+          if ! grep -q "calling run()" /tmp/worker.log; then
+            echo "::error::worker did not start under node"
+            cat /tmp/worker.log
+            exit 1
+          fi
+          echo "worker started under node $(node --version)"
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Only a push to main or a tag publishes; PRs from forks have no
+      # credentials, and building without pushing still proves the Dockerfile.
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The image serves HTTP, so "does it build" is not the question worth
+      # answering — "does it answer /health" is. Runs on the locally built
+      # image, before anything downstream depends on the pushed tag.
+      - name: Smoke-test the image
+        run: |
+          docker build -t vgi-open-meteo:smoke --build-arg GIT_COMMIT=${{ github.sha }} .
+          docker run -d --name smoke -p 8000:8000 vgi-open-meteo:smoke
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/health | tee /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+          docker rm -f smoke
