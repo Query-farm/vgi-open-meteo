@@ -53,7 +53,7 @@
     "jose": "^6.2.3",
     "typescript": "^6.0.3",
     "vgi": "npm:@query-farm/vgi@^0.25.3",
-    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.19.3",
+    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.19.4",
     "wrangler": "^4.100.0"
   }
 }

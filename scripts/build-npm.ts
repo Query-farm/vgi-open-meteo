@@ -11,24 +11,16 @@
 //
 //   * The shebang. npm makes `bin` targets executable, but the kernel still
 //     needs to be told what interprets them.
-//   * The `require` polyfill. vgi-rpc writes to the stdio transport through a
-//     synchronous `node:fs.writeSync`, reached via `import.meta.require` (Bun)
-//     or `globalThis.require` (Node CJS). Under Node ESM neither exists, and
-//     the worker dies on its first write with "IpcStreamWriter requires Bun or
-//     Node.js CJS" — its own source says ESM consumers must polyfill require.
-//     Doing it here rather than shipping CJS is deliberate: a CJS bundle of
-//     this dependency tree still contains `import.meta` references, which are
-//     a syntax error outside a module.
-//
-// `??=` so a runtime that already has one (Bun, or Node CJS) keeps it.
+// This used to also inject a `require` polyfill: vgi-rpc reaches its
+// synchronous `node:fs.writeSync` through `import.meta.require` (Bun) or
+// `globalThis.require` (Node CJS), and Node ESM has neither, so the worker died
+// on its first write. vgi-rpc 0.19.4 falls back to `process.getBuiltinModule`,
+// which is how Node ESM reaches a builtin synchronously, so the shim is gone
+// from here. Keep the dependency at >= 0.19.4 or it comes back.
 
 import { mkdir, rm } from "node:fs/promises";
 
-const BANNER = [
-  "#!/usr/bin/env node",
-  'import { createRequire as __vgiCreateRequire } from "node:module";',
-  "globalThis.require ??= __vgiCreateRequire(import.meta.url);",
-].join("\n");
+const BANNER = "#!/usr/bin/env node";
 
 // Only the stdio worker ships to npm. `src/bin/serve.ts` calls `Bun.serve`,
 // which is a ReferenceError under plain node — and npx gives you node. HTTP
