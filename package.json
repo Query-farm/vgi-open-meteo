@@ -1,6 +1,6 @@
 {
   "name": "@query-farm/vgi-open-meteo",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Query the Open-Meteo weather API family from DuckDB as SQL table functions, over the VGI protocol.",
   "license": "MIT",
   "author": "Query Farm LLC (https://query.farm)",
