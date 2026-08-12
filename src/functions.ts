@@ -4,6 +4,29 @@
 // climate × hourly/daily/current) are generated from EndpointConfig records by
 // defineWeatherFunction(). Two bespoke functions — geocoding() and elevation()
 // — don't follow the block shape and are defined directly.
+//
+// All of them are **blended row-transform** functions
+// (`defineRowTransformFunction`), not plain table functions. That is what makes
+// the positional args per-row INPUT COLUMNS rather than bind-time scalars, so a
+// single registration serves all three call shapes:
+//
+//   forecast_hourly(52.52, 13.41)                       -- literal -> 1 input row
+//   FROM cities, forecast_hourly(cities.lat, cities.lon) -- streaming
+//   FROM cities, LATERAL forecast_hourly(cities.lat, cities.lon)
+//
+// The last one is the whole point: geocode -> forecast is now one query instead
+// of a two-step copy of coordinates. Named args (timezone, forecast_days, units,
+// …) stay bind-time scalars on `params.args`; only positional args come off the
+// input `batch`.
+//
+// Two constraints the blended shape imposes, both load-bearing here:
+//   1. Map-shaped, NO finalize — DuckDB forbids FinalExecute under correlated
+//      LATERAL. Everything must be emitted from process().
+//   2. process() emits ONE batch per input batch, and because these are 1->N
+//      (an hourly forecast is many rows per coordinate) every emit MUST carry
+//      parentRowsMetadata saying which input row produced each output row.
+//      Without it the extension assumes an identity 1->1 map and the outer
+//      columns get stamped from the wrong row.
 
 // Value imports come from `vgi/worker-cf` (the workerd-safe facade) so the
 // Cloudflare bundle doesn't pull in the Node-only stdio Worker via the package
@@ -11,10 +34,13 @@
 // the root.
 import {
   batchFromColumns,
-  defineTableFunction,
+  constraintSpecFields,
+  defineRowTransformFunction,
   float64,
   int64,
+  parentRowsMetadata,
   utf8,
+  type VgiBatch,
   type VgiDataType,
   type VgiFunction,
 } from "vgi/worker-cf";
@@ -38,23 +64,96 @@ import { omGet, type OmQuery } from "./open-meteo.js";
 import { apiKeyFromParams } from "./attach-options.js";
 
 // ============================================================================
+// Blended-function helpers
+// ============================================================================
+
+/**
+ * How many upstream Open-Meteo calls a single input batch may have in flight.
+ *
+ * A blended function is handed a whole input chunk at once, and each row is its
+ * own point query — a LATERAL over a 2048-row table is 2048 calls. Unbounded
+ * `Promise.all` would open all of them at once and get us rate-limited (and on
+ * workerd, exceed the per-request subrequest ceiling). The `omGet` cache
+ * collapses duplicate coordinates within a batch for free, so this bounds only
+ * the genuinely distinct work.
+ */
+const MAX_UPSTREAM_CONCURRENCY = 8;
+
+/** Map with bounded concurrency, preserving input order in the result. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(runners);
+  return out;
+}
+
+/**
+ * Re-attach `ge`/`le`/`choices`/`pattern` to a blended function's arguments.
+ *
+ * `RowTransformConfig` has no `argConstraints` field (unlike `TableFunctionConfig`),
+ * but the constraints live on the ArgumentSpec, which is reachable on the built
+ * function — so encode them the same way the table-function path does. Without
+ * this the port would silently drop every bound and choice list from
+ * `vgi_function_arguments()`, which is where agents discover valid inputs.
+ */
+function withArgConstraints(
+  fn: VgiFunction,
+  constraints: Record<string, ArgumentConstraints>,
+): VgiFunction {
+  for (const spec of fn.argumentSpecs ?? []) {
+    const c = constraints[spec.name];
+    if (c) Object.assign(spec, constraintSpecFields(c));
+  }
+  return fn;
+}
+
+/** Read a column's value at `row`, normalised to `null` when absent. */
+function cell(batch: VgiBatch, name: string, row: number): unknown {
+  const v = batch.getChild(name)?.get(row);
+  return v === undefined ? null : v;
+}
+
+/** Append every value of `src` onto `dst` (avoids the spread arg-count limit). */
+function appendAll(dst: any[], src: any[]): void {
+  for (let i = 0; i < src.length; i++) dst.push(src[i]);
+}
+
+// ============================================================================
 // Block-function generator
 // ============================================================================
 
-/** Build the args / argDefaults / argDocs / argConstraints maps for an endpoint. */
+/** Build the args / namedArgs / argDefaults / argDocs / argConstraints maps for an endpoint. */
 function buildArgSpec(config: EndpointConfig): {
   args: Record<string, VgiDataType>;
+  namedArgs: Record<string, VgiDataType>;
   argDefaults: Record<string, any>;
   argDocs: Record<string, string>;
   argConstraints: Record<string, ArgumentConstraints>;
 } {
-  // latitude/longitude (and, for archive/climate, start_date/end_date) have no
-  // defaults → positional required args. Everything else gets a default →
-  // named optional args, e.g. forecast_hourly(52.52, 13.41, timezone := 'auto').
+  // `args` are POSITIONAL, and on a blended function that means they are the
+  // per-row input columns — latitude/longitude, plus start_date/end_date for
+  // the archive/climate endpoints that require a range. They are read off the
+  // batch in process(), never from params.args.
+  //
+  // `namedArgs` are the bind-time scalars that keep their defaults and apply to
+  // every row of the batch alike, e.g.
+  // forecast_hourly(52.52, 13.41, timezone := 'auto').
   const args: Record<string, VgiDataType> = {
     latitude: float64(),
     longitude: float64(),
   };
+  const namedArgs: Record<string, VgiDataType> = {};
   // NB: keep the word "decimal" out of arg docs — VGI313 reads it as the DECIMAL
   // data type. The type is exposed separately; docs describe meaning only.
   const argDocs: Record<string, string> = {
@@ -76,8 +175,8 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.end_date = { pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
   }
   if (config.args.forecastDays) {
-    args.forecast_days = int64();
-    args.past_days = int64();
+    namedArgs.forecast_days = int64();
+    namedArgs.past_days = int64();
     argDefaults.forecast_days = BigInt(config.defaultForecastDays ?? 7);
     argDefaults.past_days = 0n;
     argDocs.forecast_days = "Number of forecast days to return.";
@@ -86,14 +185,14 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.past_days = { ge: 0 };
   }
   if (config.args.timezone) {
-    args.timezone = utf8();
+    namedArgs.timezone = utf8();
     argDefaults.timezone = "GMT";
     argDocs.timezone = "IANA timezone or 'auto'. Daily aggregates are bucketed in this zone; time columns are always emitted as UTC.";
   }
   if (config.args.units) {
-    args.temperature_unit = utf8();
-    args.wind_speed_unit = utf8();
-    args.precipitation_unit = utf8();
+    namedArgs.temperature_unit = utf8();
+    namedArgs.wind_speed_unit = utf8();
+    namedArgs.precipitation_unit = utf8();
     argDefaults.temperature_unit = "celsius";
     argDefaults.wind_speed_unit = "kmh";
     argDefaults.precipitation_unit = "mm";
@@ -105,11 +204,11 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.precipitation_unit = { choices: ["mm", "inch"] };
   }
   if (config.args.models) {
-    args.models = utf8();
+    namedArgs.models = utf8();
     argDefaults.models = config.defaultModels ?? "";
     argDocs.models = "Comma-separated model ids (empty = Open-Meteo default).";
   }
-  return { args, argDefaults, argDocs, argConstraints };
+  return { args, namedArgs, argDefaults, argDocs, argConstraints };
 }
 
 /** The vgi.* documentation tags for a generated block function. */
@@ -168,15 +267,8 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   const outputSchema = blockSchema(config);
   const isCurrent = config.block === "current";
   const variableList = config.variables.map((v) => v.name).join(",");
-  const { args, argDefaults, argDocs, argConstraints } = buildArgSpec(config);
+  const { args, namedArgs, argDefaults, argDocs, argConstraints } = buildArgSpec(config);
   const qname = QUALIFY(config.name);
-
-  // Rough row-count hints for the optimizer.
-  const estimate = isCurrent
-    ? 1
-    : config.block === "hourly"
-      ? (config.defaultForecastDays ?? 7) * 24
-      : (config.defaultForecastDays ?? 7);
 
   // Build runnable, varied examples tailored to the endpoint's arguments —
   // these are what `duckdb_functions().examples` surfaces to SQL explorers.
@@ -223,57 +315,96 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       description: "Pick specific downscaled climate models.",
     });
   }
+  // The blended payoff: coordinates can come from a column, so many locations
+  // are one correlated join instead of a UNION ALL per site.
+  const latPreview = ["w.time", ...config.variables.slice(0, 1).map((v) => `w.${v.name}`)].join(", ");
+  examples.push({
+    sql:
+      `SELECT c.city, ${latPreview} FROM (VALUES ('Berlin', 52.52, 13.41), ('Tokyo', 35.69, 139.69)) AS c(city, lat, lon), ` +
+      `LATERAL ${qname}(c.lat, c.lon${reqPos}) AS w`,
+    description: "Many locations in one query — coordinates supplied by a column.",
+  });
 
-  return defineTableFunction<Record<string, any>>({
+  const fn = defineRowTransformFunction<Record<string, any>>({
     name: config.name,
     description: config.description,
     args,
+    namedArgs,
     argDefaults,
     argDocs,
-    argConstraints,
     projectionPushdown: true,
     categories: config.categories,
     tags: blockFunctionTags(config, outputSchema),
     onBind: () => ({ outputSchema }),
-    cardinality: () => ({ estimate, max: null }),
-    process: async (params, _state, out) => {
+    process: async (params, batch, out) => {
       const apikey = apiKeyFromParams(params);
 
-      const q: OmQuery = {
-        latitude: params.args.latitude,
-        longitude: params.args.longitude,
-        timeformat: "unixtime",
-        [config.block]: variableList,
-      };
-      if (config.args.timezone) q.timezone = (params.args.timezone as string) || "GMT";
-      if (config.args.units) {
-        q.temperature_unit = params.args.temperature_unit;
-        q.wind_speed_unit = params.args.wind_speed_unit;
-        q.precipitation_unit = params.args.precipitation_unit;
-      }
-      if (config.args.forecastDays) {
-        q.forecast_days = Number(params.args.forecast_days);
-        q.past_days = Number(params.args.past_days);
-      }
-      if (config.args.dateRange) {
-        q.start_date = params.args.start_date;
-        q.end_date = params.args.end_date;
-      }
-      if (config.args.models && params.args.models) {
-        q.models = params.args.models as string;
+      // One upstream query per input row. Rows whose coordinates (or required
+      // dates) are NULL are dropped rather than sent — a 1->0 fan-out, which
+      // the provenance array expresses naturally by simply never naming them.
+      const pending: { row: number; q: OmQuery }[] = [];
+      for (let row = 0; row < batch.numRows; row++) {
+        const lat = cell(batch, "latitude", row);
+        const lon = cell(batch, "longitude", row);
+        if (lat === null || lon === null) continue;
+
+        const q: OmQuery = {
+          latitude: Number(lat),
+          longitude: Number(lon),
+          timeformat: "unixtime",
+          [config.block]: variableList,
+        };
+        if (config.args.timezone) q.timezone = (params.args.timezone as string) || "GMT";
+        if (config.args.units) {
+          q.temperature_unit = params.args.temperature_unit;
+          q.wind_speed_unit = params.args.wind_speed_unit;
+          q.precipitation_unit = params.args.precipitation_unit;
+        }
+        if (config.args.forecastDays) {
+          q.forecast_days = Number(params.args.forecast_days);
+          q.past_days = Number(params.args.past_days);
+        }
+        if (config.args.dateRange) {
+          const start = cell(batch, "start_date", row);
+          const end = cell(batch, "end_date", row);
+          if (start === null || end === null) continue;
+          q.start_date = String(start);
+          q.end_date = String(end);
+        }
+        if (config.args.models && params.args.models) {
+          q.models = params.args.models as string;
+        }
+        pending.push({ row, q });
       }
 
-      const data = await omGet(config.host, config.path, q, {
-        apikey,
-        ttlMs: config.cacheTtlMs,
-      });
-      const offset = Number(data?.utc_offset_seconds ?? 0);
-      const cols = parseBlock(data?.[config.block], config.variables, offset, isCurrent);
-      out.emit(batchFromColumns(cols, params.outputSchema));
-      out.finish();
+      const responses = await mapLimit(pending, MAX_UPSTREAM_CONCURRENCY, (p) =>
+        omGet(config.host, config.path, p.q, { apikey, ttlMs: config.cacheTtlMs }),
+      );
+
+      // Concatenate every row's block into ONE output batch, recording the
+      // input row each output row came from. Emitting per input row instead
+      // would be wrong: a blended process() emits a single batch.
+      const cols: Record<string, any[]> = { time: [] };
+      for (const v of config.variables) cols[v.name] = [];
+      const parentRows: number[] = [];
+
+      for (let i = 0; i < pending.length; i++) {
+        const data = responses[i];
+        const offset = Number(data?.utc_offset_seconds ?? 0);
+        const block = parseBlock(data?.[config.block], config.variables, offset, isCurrent);
+        appendAll(cols.time, block.time);
+        for (const v of config.variables) appendAll(cols[v.name], block[v.name]);
+        for (let k = 0; k < block.time.length; k++) parentRows.push(pending[i].row);
+      }
+
+      out.emit(
+        batchFromColumns(cols, params.outputSchema),
+        parentRowsMetadata(parentRows, parentRows.length),
+      );
     },
     examples,
   });
+  return withArgConstraints(fn, argConstraints);
 }
 
 const blockFunctions: VgiFunction[] = ENDPOINTS.map(defineWeatherFunction);
@@ -289,11 +420,13 @@ interface GeocodingArgs {
   country_code: string;
 }
 
-const geocoding = defineTableFunction<GeocodingArgs>({
+const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   name: "geocoding",
   description: "Search places by name and return their coordinates (Open-Meteo geocoding).",
-  args: {
-    name: utf8(),
+  // `name` is the per-row input column, so LATERAL geocoding(t.city) resolves a
+  // whole table of place names in one query.
+  args: { name: utf8() },
+  namedArgs: {
     count: int64(),
     language: utf8(),
     country_code: utf8(),
@@ -304,11 +437,6 @@ const geocoding = defineTableFunction<GeocodingArgs>({
     count: "Maximum number of results (1-100).",
     language: "Result language (e.g. en, de, fr).",
     country_code: "ISO-3166-1 alpha2 filter (empty = any country).",
-  },
-  argConstraints: {
-    count: { ge: 1, le: 100 },
-    // empty (= any country) or a 2-letter ISO-3166-1 alpha2 code
-    country_code: { pattern: "^([A-Za-z]{2})?$" },
   },
   projectionPushdown: true,
   filterPushdown: true,
@@ -327,56 +455,76 @@ const geocoding = defineTableFunction<GeocodingArgs>({
       "",
       "Search places by name and return their coordinates and metadata (country, administrative regions, timezone, elevation, population).",
       "",
-      "This is the name → coordinate bridge for the rest of the catalog: read the `latitude`/`longitude` of a match, then call a `forecast_*`, `marine_*`, `air_quality_*` or `elevation` function with those numbers. Arguments must be literals, so do it as two steps rather than a correlated join.",
+      "This is the name → coordinate bridge for the rest of the catalog: read the `latitude`/`longitude` of a match, then call a `forecast_*`, `marine_*`, `air_quality_*` or `elevation` function with those numbers. Both sides accept column references, so the bridge is a single correlated join — `FROM places, LATERAL geocoding(places.city), LATERAL forecast_current(geocoding.latitude, geocoding.longitude)` — rather than two steps.",
       "",
       "Key columns are `name`, `latitude`, `longitude`, `country` and the `admin1`–`admin4` regions; see the result schema for the full set. Runnable queries are in this function's example queries.",
     ].join("\n"),
     "vgi.result_columns_schema": resultColumnsSchema(GEOCODING_SCHEMA),
   },
   onBind: () => ({ outputSchema: GEOCODING_SCHEMA }),
-  cardinality: () => ({ estimate: 10, max: 100 }),
-  process: async (params, _state, out) => {
+  process: async (params, batch, out) => {
     const apikey = apiKeyFromParams(params);
-    const data = await omGet(
-      "geocoding-api.open-meteo.com",
-      "/v1/search",
-      {
-        name: params.args.name,
-        count: Number(params.args.count),
-        language: params.args.language || "en",
-        countryCode: params.args.country_code || undefined,
-        format: "json",
-      },
-      { apikey, ttlMs: 24 * 60 * 60 * 1000 },
+
+    // One search per input name. A blank/NULL name is dropped rather than sent
+    // (the API requires >= 2 characters), which is a 1->0 for that row.
+    const pending: { row: number; name: string }[] = [];
+    for (let row = 0; row < batch.numRows; row++) {
+      const name = cell(batch, "name", row);
+      if (name === null) continue;
+      const text = String(name);
+      if (text.length === 0) continue;
+      pending.push({ row, name: text });
+    }
+
+    const responses = await mapLimit(pending, MAX_UPSTREAM_CONCURRENCY, (p) =>
+      omGet(
+        "geocoding-api.open-meteo.com",
+        "/v1/search",
+        {
+          name: p.name,
+          count: Number(params.args.count),
+          language: params.args.language || "en",
+          countryCode: params.args.country_code || undefined,
+          format: "json",
+        },
+        { apikey, ttlMs: 24 * 60 * 60 * 1000 },
+      ),
     );
 
-    const results: any[] = Array.isArray(data?.results) ? data.results : [];
     const cols: Record<string, any[]> = {
       id: [], name: [], latitude: [], longitude: [], elevation: [],
       feature_code: [], country_code: [], country: [],
       admin1: [], admin2: [], admin3: [], admin4: [],
       timezone: [], population: [], postcodes: [],
     };
-    for (const r of results) {
-      cols.id.push(r.id != null ? BigInt(r.id) : null);
-      cols.name.push(String(r.name ?? ""));
-      cols.latitude.push(Number(r.latitude ?? 0));
-      cols.longitude.push(Number(r.longitude ?? 0));
-      cols.elevation.push(r.elevation != null ? Number(r.elevation) : null);
-      cols.feature_code.push(String(r.feature_code ?? ""));
-      cols.country_code.push(String(r.country_code ?? ""));
-      cols.country.push(String(r.country ?? ""));
-      cols.admin1.push(String(r.admin1 ?? ""));
-      cols.admin2.push(String(r.admin2 ?? ""));
-      cols.admin3.push(String(r.admin3 ?? ""));
-      cols.admin4.push(String(r.admin4 ?? ""));
-      cols.timezone.push(String(r.timezone ?? ""));
-      cols.population.push(r.population != null ? BigInt(r.population) : null);
-      cols.postcodes.push(Array.isArray(r.postcodes) ? r.postcodes.map(String) : null);
+    const parentRows: number[] = [];
+
+    for (let i = 0; i < pending.length; i++) {
+      const results: any[] = Array.isArray(responses[i]?.results) ? responses[i].results : [];
+      for (const r of results) {
+        cols.id.push(r.id != null ? BigInt(r.id) : null);
+        cols.name.push(String(r.name ?? ""));
+        cols.latitude.push(Number(r.latitude ?? 0));
+        cols.longitude.push(Number(r.longitude ?? 0));
+        cols.elevation.push(r.elevation != null ? Number(r.elevation) : null);
+        cols.feature_code.push(String(r.feature_code ?? ""));
+        cols.country_code.push(String(r.country_code ?? ""));
+        cols.country.push(String(r.country ?? ""));
+        cols.admin1.push(String(r.admin1 ?? ""));
+        cols.admin2.push(String(r.admin2 ?? ""));
+        cols.admin3.push(String(r.admin3 ?? ""));
+        cols.admin4.push(String(r.admin4 ?? ""));
+        cols.timezone.push(String(r.timezone ?? ""));
+        cols.population.push(r.population != null ? BigInt(r.population) : null);
+        cols.postcodes.push(Array.isArray(r.postcodes) ? r.postcodes.map(String) : null);
+        parentRows.push(pending[i].row);
+      }
     }
 
-    out.emit(batchFromColumns(cols, params.outputSchema));
-    out.finish();
+    out.emit(
+      batchFromColumns(cols, params.outputSchema),
+      parentRowsMetadata(parentRows, parentRows.length),
+    );
   },
   examples: [
     {
@@ -391,7 +539,19 @@ const geocoding = defineTableFunction<GeocodingArgs>({
       sql: "SELECT name, latitude, longitude FROM open_meteo.main.geocoding('München', language := 'de', country_code := 'DE')",
       description: "Localized search restricted to one country.",
     },
+    {
+      sql:
+        "SELECT p.city, g.name, g.latitude, g.longitude FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
+        "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g",
+      description: "Resolve a whole column of place names in one correlated join.",
+    },
   ],
+});
+
+const geocoding = withArgConstraints(geocodingBase, {
+  count: { ge: 1, le: 100 },
+  // empty (= any country) or a 2-letter ISO-3166-1 alpha2 code
+  country_code: { pattern: "^([A-Za-z]{2})?$" },
 });
 
 // ============================================================================
@@ -403,17 +563,19 @@ interface ElevationArgs {
   longitude: number;
 }
 
-const elevation = defineTableFunction<ElevationArgs>({
+/** Coordinates per /v1/elevation call. The endpoint takes comma-separated
+ *  lists and answers with one elevation per point; 100 is its documented cap.
+ *  This is why elevation batches where the weather blocks cannot — one call
+ *  serves 100 input rows instead of 100 calls. */
+const ELEVATION_BATCH = 100;
+
+const elevationBase = defineRowTransformFunction<ElevationArgs>({
   name: "elevation",
   description: "Terrain elevation (90m DEM) for a coordinate (Open-Meteo elevation).",
   args: { latitude: float64(), longitude: float64() },
   argDocs: {
     latitude: "Latitude in degrees north (WGS84).",
     longitude: "Longitude in degrees east (WGS84).",
-  },
-  argConstraints: {
-    latitude: LATITUDE_CONSTRAINT,
-    longitude: LONGITUDE_CONSTRAINT,
   },
   projectionPushdown: true,
   categories: ["weather", "reference"],
@@ -434,32 +596,72 @@ const elevation = defineTableFunction<ElevationArgs>({
     "vgi.result_columns_schema": resultColumnsSchema(ELEVATION_SCHEMA),
   },
   onBind: () => ({ outputSchema: ELEVATION_SCHEMA }),
-  cardinality: () => ({ estimate: 1, max: 1 }),
-  process: async (params, _state, out) => {
+  process: async (params, batch, out) => {
     const apikey = apiKeyFromParams(params);
-    const data = await omGet(
-      "api.open-meteo.com",
-      "/v1/elevation",
-      { latitude: params.args.latitude, longitude: params.args.longitude },
-      { apikey, ttlMs: 24 * 60 * 60 * 1000 },
-    );
-    const elev: any[] = Array.isArray(data?.elevation) ? data.elevation : [];
-    out.emit(
-      batchFromColumns(
+
+    const pending: { row: number; lat: number; lon: number }[] = [];
+    for (let row = 0; row < batch.numRows; row++) {
+      const lat = cell(batch, "latitude", row);
+      const lon = cell(batch, "longitude", row);
+      if (lat === null || lon === null) continue;
+      pending.push({ row, lat: Number(lat), lon: Number(lon) });
+    }
+
+    // Chunk the batch into multi-coordinate calls rather than one call per row.
+    const chunks: (typeof pending)[] = [];
+    for (let i = 0; i < pending.length; i += ELEVATION_BATCH) {
+      chunks.push(pending.slice(i, i + ELEVATION_BATCH));
+    }
+
+    const responses = await mapLimit(chunks, MAX_UPSTREAM_CONCURRENCY, (chunk) =>
+      omGet(
+        "api.open-meteo.com",
+        "/v1/elevation",
         {
-          latitude: [params.args.latitude],
-          longitude: [params.args.longitude],
-          elevation: [elev.length > 0 ? Number(elev[0]) : null],
+          latitude: chunk.map((p) => p.lat).join(","),
+          longitude: chunk.map((p) => p.lon).join(","),
         },
-        params.outputSchema,
+        { apikey, ttlMs: 24 * 60 * 60 * 1000 },
       ),
     );
-    out.finish();
+
+    const cols: Record<string, any[]> = { latitude: [], longitude: [], elevation: [] };
+    const parentRows: number[] = [];
+
+    for (let c = 0; c < chunks.length; c++) {
+      // Positional: the response's Nth elevation belongs to the Nth coordinate
+      // we sent. A short array (upstream returned fewer) yields null, never a
+      // silent shift onto the wrong row.
+      const elev: any[] = Array.isArray(responses[c]?.elevation) ? responses[c].elevation : [];
+      for (let j = 0; j < chunks[c].length; j++) {
+        const p = chunks[c][j];
+        cols.latitude.push(p.lat);
+        cols.longitude.push(p.lon);
+        cols.elevation.push(j < elev.length && elev[j] != null ? Number(elev[j]) : null);
+        parentRows.push(p.row);
+      }
+    }
+
+    out.emit(
+      batchFromColumns(cols, params.outputSchema),
+      parentRowsMetadata(parentRows, parentRows.length),
+    );
   },
   examples: [
     { sql: "SELECT elevation FROM open_meteo.main.elevation(52.52, 13.41)", description: "Terrain elevation at Berlin (metres)." },
     { sql: "SELECT latitude, longitude, elevation FROM open_meteo.main.elevation(27.99, 86.93)", description: "Near the summit of Everest." },
+    {
+      sql:
+        "SELECT c.name, e.elevation FROM (VALUES ('Berlin', 52.52, 13.41), ('Everest', 27.99, 86.93)) AS c(name, lat, lon), " +
+        "LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e",
+      description: "Elevation for a whole table of coordinates in one correlated join.",
+    },
   ],
+});
+
+const elevation = withArgConstraints(elevationBase, {
+  latitude: LATITUDE_CONSTRAINT,
+  longitude: LONGITUDE_CONSTRAINT,
 });
 
 export const allWeatherFunctions: VgiFunction[] = [

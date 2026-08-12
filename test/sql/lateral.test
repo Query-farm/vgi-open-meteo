@@ -1,0 +1,111 @@
+# name: test/sql/lateral.test
+# description: blended row-transform call shapes — column args, LATERAL, and per-output-row provenance
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# Every function here is a blended row-transform, so its positional args are
+# per-row input columns. These tests pin the two things that buys us — column
+# arguments, and correct parent-row provenance — because a regression to plain
+# table functions would still pass every literal-argument test in the suite.
+
+# ============================================================================
+# Provenance: the outer row and the emitted row must be the same location
+# ============================================================================
+
+# elevation echoes the coordinate it was handed, so the outer column and the
+# echoed column agree only if each output row is stamped from the input row
+# that actually produced it. Wrong provenance shifts names onto other rows.
+query TTT
+SELECT c.name, e.latitude = c.lat AS lat_ok, e.longitude = c.lon AS lon_ok
+FROM (VALUES ('Berlin', 52.52, 13.41), ('Everest', 27.99, 86.93), ('Sydney', -33.87, 151.21)) AS c(name, lat, lon),
+     LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e
+ORDER BY c.name;
+----
+Berlin	true	true
+Everest	true	true
+Sydney	true	true
+
+# The same check with a physical fact attached to each row.
+query TT
+SELECT c.name, e.elevation > 5000 AS high
+FROM (VALUES ('Berlin', 52.52, 13.41), ('Everest', 27.99, 86.93)) AS c(name, lat, lon),
+     LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e
+ORDER BY c.name;
+----
+Berlin	false
+Everest	true
+
+# ============================================================================
+# 1 -> N fan-out
+# ============================================================================
+
+# One day of hourly forecast is 24 rows per input row, each attributed to its
+# own city.
+query TT
+SELECT c.city, count(*) = 24 AS one_day
+FROM (VALUES ('Berlin', 52.52, 13.41), ('Tokyo', 35.69, 139.69)) AS c(city, lat, lon),
+     LATERAL open_meteo.main.forecast_hourly(c.lat, c.lon, forecast_days := 1) AS f
+GROUP BY c.city ORDER BY c.city;
+----
+Berlin	true
+Tokyo	true
+
+# Named args stay bind-time scalars and apply to every row alike.
+query I
+SELECT count(DISTINCT c.city)
+FROM (VALUES ('Berlin', 52.52, 13.41), ('Tokyo', 35.69, 139.69)) AS c(city, lat, lon),
+     LATERAL open_meteo.main.forecast_daily(c.lat, c.lon, forecast_days := 3) AS f;
+----
+2
+
+# A comma join (no LATERAL keyword) is the same blended call shape.
+query I
+SELECT count(*)
+FROM (VALUES (52.52, 13.41), (35.69, 139.69)) AS c(lat, lon),
+     open_meteo.main.forecast_current(c.lat, c.lon) AS f;
+----
+2
+
+# ============================================================================
+# NULL coordinates are dropped (1 -> 0), not sent upstream
+# ============================================================================
+
+query I
+SELECT count(*)
+FROM (VALUES (52.52, 13.41), (NULL, NULL)) AS c(lat, lon),
+     LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e;
+----
+1
+
+# ============================================================================
+# The geocode -> forecast bridge, as one query
+# ============================================================================
+
+statement ok
+CREATE TABLE places AS SELECT * FROM (VALUES ('Berlin'), ('Tokyo')) AS t(city);
+
+# geocoding takes its place name from a column too, so name -> coordinate ->
+# weather is a single statement rather than a copy of numbers between queries.
+query TT
+SELECT p.city, count(*) > 0 AS got_weather
+FROM places p,
+     LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g,
+     LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w
+GROUP BY p.city ORDER BY p.city;
+----
+Berlin	true
+Tokyo	true
+
+# Literal arguments still work — one registration serves every call shape.
+query I
+SELECT count(*) FROM open_meteo.main.elevation(52.52, 13.41);
+----
+1

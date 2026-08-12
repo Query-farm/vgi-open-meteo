@@ -60,6 +60,12 @@ SELECT * FROM m.main.forecast_daily(52.52, 13.41, forecast_days := 14, timezone 
 -- geocoding is the name→coordinate bridge (name is positional):
 SELECT name, latitude, longitude FROM m.main.geocoding('Berlin', count := 5);
 SELECT * FROM m.main.elevation(52.52, 13.41);
+
+-- positional args also accept COLUMNS, so name→coordinate→weather is one query:
+SELECT p.city, w.temperature_2m
+FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city),
+     LATERAL m.main.geocoding(p.city, count := 1) AS g,
+     LATERAL m.main.forecast_current(g.latitude, g.longitude) AS w;
 ```
 
 The catalog is named **`open_meteo`** — the first string in `ATTACH '<name>'`
@@ -71,8 +77,8 @@ There are **13 table functions + 6 scalar macros + 1 view (`weather_codes`)**:
 every function requires `latitude`/`longitude` (or a `name`) as a *positional*
 argument, so there's nothing to `SELECT * FROM table` without `()`. Optional args
 (`timezone`, `forecast_days`, `temperature_unit`, …) are *named* (they have
-defaults). Multi-location is done in SQL (`UNION ALL` / cross join over a
-coordinates table), not via partitioning. `weather_codes` is a browsable, no-arg
+defaults). Multi-location is a `LATERAL` join over a coordinates table (see
+"Blended functions" below), not partitioning. `weather_codes` is a browsable, no-arg
 view (the WMO 4677 table) — it satisfies the linter's "browsable relation" nudge
 (VGI146), backs the `weather_code_*` macros, and JOINs to any `weather_code`
 column. It's defined in `catalog.ts` as a `VALUES`-backed `ViewDescriptor`.
@@ -88,11 +94,61 @@ scalar function is an RPC per value. Call them schema-qualified, e.g.
 They carry the same `vgi.*` docs as the functions and sit under the `helpers`
 category; the (deterministic) macros are asserted in `open_meteo_catalog.test`.
 
-**Args must be literals.** VGI table functions only accept literal arguments —
-DuckDB rejects correlated/`LATERAL` column references ("does not support lateral
-join column parameters"). So the geocode→forecast bridge is a two-step (read the
-coordinates from `geocoding(...)`, then call `forecast_*` with those numbers),
-not a single correlated join. `duckdb_functions().examples` carries the runnable
+**Blended functions: args can be columns.** All 13 are
+`defineRowTransformFunction` ("blended" table-in-out), not `defineTableFunction`.
+Their **positional args are per-row input columns**, so one registration serves
+every call shape:
+
+```sql
+SELECT * FROM m.main.forecast_hourly(52.52, 13.41);              -- literal -> 1 input row
+FROM cities, m.main.forecast_hourly(cities.lat, cities.lon);      -- columns -> streaming
+FROM cities, LATERAL m.main.forecast_hourly(cities.lat, cities.lon);
+```
+
+So geocode→forecast is one query, and multi-location is a join rather than a
+`UNION ALL` per site:
+
+```sql
+SELECT p.city, w.time, w.temperature_2m
+FROM places p,
+     LATERAL m.main.geocoding(p.city, count := 1) g,
+     LATERAL m.main.forecast_current(g.latitude, g.longitude) w;
+```
+
+**Named args stay bind-time scalars** (`timezone`, `forecast_days`, units,
+`models`) — they're on `params.args` and apply to the whole batch. Positional
+args are read off the input `batch` in `process()`, never from `params.args`.
+That split is what `buildArgSpec()` returns (`args` vs `namedArgs`).
+
+Four things the blended shape forces, all load-bearing in `functions.ts`:
+
+1. **No finalize.** Map-shaped only — DuckDB forbids `FinalExecute` under
+   correlated LATERAL. Everything is emitted from `process()`; there is no
+   `out.finish()`.
+2. **One emit per input batch, carrying provenance.** These are 1→N (an hourly
+   forecast is many rows per coordinate), so every emit passes
+   `parentRowsMetadata(parentRows, …)` naming the input row behind each output
+   row. Omit it and the extension assumes an identity 1→1 map and stamps outer
+   columns from the wrong row — `test/sql/lateral.test` pins this by checking
+   that `elevation`'s echoed coordinate matches its outer row.
+3. **`RowTransformConfig` has no `argConstraints` or `cardinality`.** The
+   constraints still matter (they're how agents discover valid inputs via
+   `vgi_function_arguments()`), so `withArgConstraints()` re-attaches them onto
+   the built function's `argumentSpecs` with `constraintSpecFields`. The
+   cardinality hints are simply gone — there is no blended equivalent.
+4. **One upstream call per input row.** A LATERAL over a big table is a lot of
+   requests, so calls run through `mapLimit()` at `MAX_UPSTREAM_CONCURRENCY`
+   (8); the `omGet` cache collapses duplicate coordinates within a batch.
+   `elevation` is the exception — `/v1/elevation` takes comma-separated
+   coordinate lists, so it batches 100 points per call. The weather endpoints
+   also accept multi-coordinate queries (returning an array of result objects),
+   which would be the next real optimisation; `parseBlock` assumes a single
+   object today.
+
+NULL coordinates (or NULL required dates) are dropped rather than sent — a 1→0
+fan-out, which provenance expresses by never naming that input row.
+
+`duckdb_functions().examples` carries the runnable
 examples set on each function (the generator tailors them per endpoint: date
 ranges, `forecast_days`/`past_days`, units, climate `models`). The rest of the
 metadata **is** queryable — don't be fooled by the empty `.examples`/`.description`
@@ -178,7 +234,10 @@ has no `process`.
 
 `make cf-deploy` (= `wrangler deploy`) ships `src/bin/cf.ts` per `wrangler.toml`.
 The flechette Arrow backend is selected automatically by the `workerd` export
-condition — no arrow-js reaches the edge (~148 KiB gzip bundle). Before the first
+condition — no arrow-js reaches the edge (~585 KiB gzip bundle; it grew from
+~148 KiB with vgi-rpc 0.19, which statically inlines the standardized landing
+page + browser client bundle into `handler.ts` — they bundle whether or not the
+worker opts in via `landingInfo`). Before the first
 real deploy, set the state-token key once: `make cf-secret` (random 32-byte hex →
 `wrangler secret put VGI_SIGNING_KEY`); a stable key is **required** because
 Workers isolates don't share memory, so a bind→scan query would otherwise fail
@@ -234,6 +293,10 @@ runs against the stdio worker, a local HTTP server, or the deployed Fly app.
 - `forecast.test` — forecast_hourly/daily/current column types + row counts +
   sane physical ranges.
 - `geocoding.test` — geocoding search (incl. country filter) + elevation.
+- `lateral.test` — the blended call shapes: column args, `LATERAL`, comma join,
+  the one-query geocode→forecast bridge, NULL coordinates as 1→0, and
+  per-output-row provenance (asserted via `elevation` echoing its input
+  coordinate back next to the outer row).
 
 They run under DuckDB's `unittest` runner, which must be a build with the `vgi`
 and `httpfs` extensions statically linked — `make` defaults `TEST_RUNNER` to
