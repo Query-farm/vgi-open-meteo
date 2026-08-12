@@ -72,6 +72,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # arm64 is emulated on the amd64 runner. Slower to build, but the
+      # alternative is an image that will not run on Apple Silicon or on any
+      # arm64 host — and the README tells people to `docker run` this.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - uses: docker/setup-buildx-action@v3
 
       # Only a push to main or a tag publishes; PRs from forks have no
@@ -100,6 +107,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'push' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
