@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .PHONY: install typecheck worker serve docker-build deploy \
         cf-dev cf-deploy cf-secret test-cf \
-        test test-stdio test-http test-cloud
+        test test-stdio test-http
 
 install:
 	bun install
@@ -13,19 +13,17 @@ typecheck:
 # ---------------------------------------------------------------------------
 # SQL integration tests (sqllogictest). The .test files in test/sql/ are
 # transport-agnostic: VGI_OPEN_METEO_WORKER is the ATTACH LOCATION — a stdio
-# command, a local HTTP URL, or the deployed Fly URL. Run them with DuckDB's
-# unittest runner (a build with the vgi + httpfs extensions statically linked).
+# command, a local HTTP URL, or the deployed Cloudflare Worker. Run them with
+# DuckDB's unittest runner (a build with vgi + httpfs statically linked).
 # ---------------------------------------------------------------------------
 TEST_RUNNER  ?= $(HOME)/Development/vgi/build/release/test/unittest
 TEST_PATTERN ?= test/sql/*
 HTTP_PORT    ?= 8000
 WORKER_STDIO ?= bun run $(CURDIR)/src/bin/worker.ts
 WORKER_HTTP  ?= http://localhost:$(HTTP_PORT)
-WORKER_CLOUD ?= https://vgi-open-meteo.fly.dev
 WORKER_CF    ?= https://vgi-open-meteo.rusty-bb6.workers.dev
 
-# Default suite uses the local transports. test-cloud hits the deployed app
-# (auth is currently disabled in fly.toml, so no Bearer token is needed).
+# Default suite uses the local transports; test-cf hits the live deployment.
 test: test-stdio test-http
 
 test-stdio:
@@ -40,9 +38,6 @@ test-http:
 		TEST_EXIT=$$?; \
 		kill $$SERVER_PID 2>/dev/null; wait $$SERVER_PID 2>/dev/null; \
 		exit $$TEST_EXIT
-
-test-cloud:
-	VGI_OPEN_METEO_WORKER="$(WORKER_CLOUD)" $(TEST_RUNNER) --test-dir $(CURDIR) "$(TEST_PATTERN)"
 
 # Run the suite against the deployed Cloudflare Worker.
 test-cf:

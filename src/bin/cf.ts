@@ -31,6 +31,9 @@ export interface Env {
   VGI_SIGNING_KEY?: string;
   /** State-token TTL in seconds (default 3600). */
   VGI_TOKEN_TTL?: string;
+  /** CORS allowed origins. Defaults to `*` when unset — see the note on
+   *  `corsOrigins` below for why this defaults on rather than off. */
+  VGI_HTTP_CORS_ORIGINS?: string;
 }
 
 async function sha256Key(secret: string): Promise<Uint8Array> {
@@ -56,8 +59,22 @@ async function getHandler(env: Env): Promise<(req: Request) => Promise<Response>
     protocol: { registry, catalogInterface: composite },
     signingKey,
     tokenTtl: env.VGI_TOKEN_TTL ? Number(env.VGI_TOKEN_TTL) : 3600,
-    // Serve RPC (and GET /health) at the root, matching the Fly/Bun deployment.
+    // Serve RPC (and GET /health) at the root, matching the Bun entry.
     prefix: "",
+    // `createVgiFetch` treats CORS as opt-in and disables it when this is
+    // omitted, which is how this Worker shipped with no CORS headers at all: the
+    // Bun entry reads VGI_HTTP_CORS_ORIGINS from the environment, and there was
+    // no equivalent here. Same failure shape as the landingInfo bug in cb18abe —
+    // serveVgiWorker derives its options, the CF entry must pass each one.
+    //
+    // The landing page itself never noticed (it is same-origin), but Cupola is a
+    // different origin, so its preflight got a bare 204 and the browser blocked
+    // the call — i.e. the landing page's own "Explore" links could not talk back
+    // to the Worker they point at.
+    //
+    // Defaulted to "*" rather than left to an unset var, so a missing binding
+    // degrades to working-and-open instead of silently back to no-CORS.
+    corsOrigins: env.VGI_HTTP_CORS_ORIGINS ?? "*",
     serverId: "vgi-open-meteo",
     repositoryUrl: "https://github.com/Query-farm/vgi-open-meteo",
     // Without landingInfo the handler falls back to vgi-rpc's generic "this is

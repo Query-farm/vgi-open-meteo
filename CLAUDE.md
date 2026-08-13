@@ -17,14 +17,13 @@ make typecheck      # bunx tsc --noEmit
 make worker         # stdio worker (for DuckDB ATTACH ... TYPE vgi, LOCATION 'bun run ...')
 make serve          # HTTP server on $VGI_HTTP_PORT (default 8000)
 
-make test           # test-stdio + test-http (sqllogictest, 79 assertions, live API)
+make test           # test-stdio + test-http (sqllogictest, 135 assertions, live API)
 make test-stdio     # run test/sql/*.test against the bun stdio worker
 make test-http      # boot a local HTTP server, run the suite against it, stop it
-make test-cloud     # run against https://vgi-open-meteo.fly.dev (auth disabled → open)
 make test-cf        # run against the deployed Cloudflare Worker ($WORKER_CF)
 
 make docker-build   # plain `bun install` build — no vendoring
-make deploy         # fly deploy
+make deploy         # fly deploy — NOT currently deployed anywhere, see below
 make cf-deploy      # wrangler deploy (Cloudflare Worker, src/bin/cf.ts)
 make cf-secret      # set the VGI_SIGNING_KEY state-token secret (once)
 ```
@@ -243,7 +242,21 @@ real deploy, set the state-token key once: `make cf-secret` (random 32-byte hex 
 Workers isolates don't share memory, so a bind→scan query would otherwise fail
 when it lands on a different isolate. `make test-cf` runs the full sqllogictest
 suite against the deployment (`WORKER_CF`). Live at
-`https://vgi-open-meteo.rusty-bb6.workers.dev`. The in-memory `omGet` cache is
+`https://vgi-open-meteo.rusty-bb6.workers.dev` — **this is the only deployment**.
+`fly.toml`, the `Dockerfile` and `make deploy` still work, but no Fly app exists
+(there is no `vgi-open-meteo.fly.dev`; `make deploy` would create one, not update
+one), so `serve.ts` is exercised only by `make serve` / `make test-http`.
+
+CORS is opt-in in `createVgiFetch` and **off when `corsOrigins` is omitted**,
+which is how this Worker first shipped with none: the Bun entry reads
+`VGI_HTTP_CORS_ORIGINS` from the environment and the CF entry had no equivalent.
+`cf.ts` now passes `env.VGI_HTTP_CORS_ORIGINS ?? "*"` — defaulted on, so a
+missing binding degrades to open rather than silently back to broken. The landing
+page never revealed this (same-origin); Cupola did, being cross-origin. Same
+shape as the `landingInfo` bug in `cb18abe` — anything `serveVgiWorker` derives
+for the Bun entry must be passed explicitly here.
+
+The in-memory `omGet` cache is
 per-isolate/ephemeral on CF (correct, just lower hit-rate); back it with the CF
 Cache API if cross-request caching matters.
 
@@ -326,7 +339,8 @@ hand-calibrated, not negotiated.
 `test/sql/*.test` are DuckDB sqllogictest files, **transport-agnostic**: the
 worker is injected via `VGI_OPEN_METEO_WORKER` (used as both the
 `vgi_catalogs(...)` argument and the `ATTACH ... LOCATION`), so the same suite
-runs against the stdio worker, a local HTTP server, or the deployed Fly app.
+runs against the stdio worker, a local HTTP server, or the deployed Cloudflare
+Worker.
 
 - `open_meteo_catalog.test` — catalog/function discovery, apikey option
   advertised, attach-with-key succeeds.
@@ -344,8 +358,8 @@ They run under DuckDB's `unittest` runner, which must be a build with the `vgi`
 and `httpfs` extensions statically linked — `make` defaults `TEST_RUNNER` to
 `~/Development/vgi/build/release/test/unittest`. Override `TEST_RUNNER` if yours
 lives elsewhere. The tests hit the **live Open-Meteo API**, so they need network
-access. `test-cloud` hits the deployment (auth disabled — see fly.toml — so it
-runs open, no token needed).
+access. `test-cf` hits the deployment, which runs open (no auth configured), so
+no token is needed.
 
 ## arrow-js single-copy (npm deps)
 
