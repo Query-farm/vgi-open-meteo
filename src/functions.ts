@@ -34,6 +34,7 @@
 // the root.
 import {
   batchFromColumns,
+  cacheControlMetadata,
   constraintSpecFields,
   defineRowTransformFunction,
   float64,
@@ -276,6 +277,16 @@ function blockFunctionTags(
   };
 }
 
+// TODO(result-cache): the weather functions deliberately advertise no
+// `vgi.cache.*` yet. A relative `ttl` is the wrong instrument for them: it is
+// anchored to receipt, while the data turns over at model-issuance boundaries,
+// so a window fetched just before a run lands serves a superseded forecast for
+// its whole duration. Doing this properly means an absolute `expires` derived
+// from each host's `/data/<model>/static/meta.json`
+// (`last_run_availability_time + update_interval_seconds`, plus ~10min for
+// Open-Meteo's eventual consistency), clamped for runs that are already overdue
+// and for decommissioned models whose metadata has gone stale. `geocoding` has
+// no such schedule, which is why it can opt in today — see GEOCODING_CACHE.
 function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   const outputSchema = blockSchema(config);
   const isCurrent = config.block === "current";
@@ -457,6 +468,38 @@ const GEOCODING_EXAMPLES = [
     },
 ];
 
+/**
+ * Result-cache advertisement for `geocoding` (`vgi.cache.*`).
+ *
+ * Unlike every weather endpoint, geocoding has no model-run schedule to align
+ * to — GeoNames is a static place database, which is exactly why its host
+ * serves no `/data/<model>/static/meta.json` the way the forecast hosts do. So
+ * a plain relative `ttl` is the right instrument here: there is no issuance
+ * boundary that a fetch-anchored window could drift past and serve a superseded
+ * run. (For the forecast functions it is the wrong instrument, which is why
+ * they still advertise nothing — see the TODO on defineWeatherFunction.)
+ *
+ * `perValue` memoizes each distinct input name, which is the whole point for
+ * the geocode->forecast bridge: a LATERAL over a city table calls this once per
+ * row, against an API whose free tier allows 600 calls/minute. The framework
+ * only populates that tier when the function opts in, because a per-value serve
+ * costs a probe + decode + assembly and only pays back when calling the worker
+ * is more expensive — a rate-limited network round-trip clears that bar easily.
+ *
+ * The memo key is not just the name: the extension folds the bind arguments
+ * (`count` / `language` / `country_code`) and the attach options into the
+ * static key, so a `count := 1` memo can never serve a `count := 5` call, nor a
+ * free-tier memo serve an apikey'd one.
+ *
+ * `staleIfError` is deliberately generous — a month-old coordinate for Berlin
+ * is a far better answer than a failed query when we get rate-limited.
+ */
+const GEOCODING_CACHE = {
+  ttl: 7 * 24 * 60 * 60,
+  perValue: true,
+  staleIfError: 30 * 24 * 60 * 60,
+};
+
 const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   name: "geocoding",
   description: "Search places by name and return their coordinates (Open-Meteo geocoding).",
@@ -559,9 +602,12 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
       }
     }
 
+    // Cache keys are merged over the provenance map rather than replacing it —
+    // the extension latches the advertisement from an exchange's FIRST output,
+    // so emitting it on every batch is both harmless and the robust choice.
     out.emit(
       batchFromColumns(cols, params.outputSchema),
-      parentRowsMetadata(parentRows, parentRows.length),
+      cacheControlMetadata(GEOCODING_CACHE, parentRowsMetadata(parentRows, parentRows.length)),
     );
   },
   examples: GEOCODING_EXAMPLES,

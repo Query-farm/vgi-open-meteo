@@ -1,0 +1,71 @@
+# name: test/sql/cache.test
+# description: geocoding's vgi.cache.* result-cache advertisement (live Open-Meteo API)
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+require vgi
+
+require httpfs
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+statement ok
+CREATE TABLE cities(city VARCHAR);
+
+statement ok
+INSERT INTO cities VALUES ('Berlin'), ('Paris'), ('Tokyo');
+
+# ============================================================================
+# Per-value memoization
+#
+# geocoding advertises `vgi.cache.per_value`, which is only meaningful for an
+# exchange-mode MAP — so this must be a correlated LATERAL, not a literal call.
+# The first pass populates the memo; the second should serve every value from it
+# without reaching the worker (and therefore without an Open-Meteo request).
+# ============================================================================
+
+statement ok
+SELECT count(*) FROM cities c, LATERAL open_meteo.main.geocoding(c.city, count := 1) g;
+
+statement ok
+CREATE TABLE primed AS SELECT exchange_hits AS hits, exchange_stores AS stores FROM vgi_result_cache_stats();
+
+# The worker opted in, so the first pass must have stored per-value entries.
+query I
+SELECT stores > 0 FROM primed;
+----
+true
+
+statement ok
+SELECT count(*) FROM cities c, LATERAL open_meteo.main.geocoding(c.city, count := 1) g;
+
+query I
+SELECT (SELECT exchange_hits FROM vgi_result_cache_stats()) > (SELECT hits FROM primed);
+----
+true
+
+# A memo serve must return the same answer as the upstream call, not an empty or
+# truncated one.
+query TII
+SELECT g.name, round(g.latitude, 2), round(g.longitude, 2)
+FROM cities c, LATERAL open_meteo.main.geocoding(c.city, count := 1) g
+WHERE c.city = 'Berlin';
+----
+Berlin	52.52	13.41
+
+# ============================================================================
+# The memo key folds in the bind arguments
+#
+# `count` is a bind-time named arg, not part of the per-value input tuple, so it
+# only stays correct because the extension folds canonical_arguments into the
+# static key. If it did not, the primed count := 1 memo above would serve this
+# call and return 1 row instead of 5.
+# ============================================================================
+
+query I
+SELECT count(*) FROM cities c, LATERAL open_meteo.main.geocoding(c.city, count := 5) g
+WHERE c.city = 'Berlin';
+----
+5

@@ -281,6 +281,46 @@ the response's `utc_offset_seconds` whenever a `timezone` is set, so
 variables like `sunrise`/`sunset`. The `timezone` arg still controls how *daily*
 aggregates are bucketed; the emitted instants are always UTC.
 
+## Caching
+
+Two layers, and the important one is **not** the worker's.
+
+**Client-side result cache (`vgi.cache.*`).** A function advertises cacheability
+as metadata on its first emitted batch and the DuckDB extension caches the
+result — no RPC, no worker CPU, and it survives across queries. `geocoding` opts
+in via `GEOCODING_CACHE` in `functions.ts` (`cacheControlMetadata` from
+`vgi/worker-cf`, merged *over* `parentRowsMetadata` so provenance survives). It
+sets `perValue`, which memoizes each distinct input name — only meaningful for
+an exchange-mode MAP, i.e. a correlated `LATERAL`, which is every call shape
+these blended functions have. The extension latches the advertisement from an
+exchange's first output, so re-emitting it per batch is harmless.
+
+The memo key is not just the input tuple: the extension folds
+`canonical_arguments` and `attach_options` into the static key, so a
+`count := 1` memo can't serve a `count := 5` call and a free-tier memo can't
+serve an apikey'd one. `cache.test` pins both, and fails if the advertisement is
+removed.
+
+**The weather functions deliberately advertise nothing yet.** A relative `ttl`
+is anchored to *receipt* while forecast data turns over at *model-issuance*
+boundaries, so a window fetched just before a run lands serves a superseded
+forecast for its full duration. Doing it right needs an absolute `expires` from
+`https://<host>/data/<model>/static/meta.json` (undocumented, but live on every
+weather host: `last_run_availability_time + update_interval_seconds`, plus ~10min
+for Open-Meteo's eventual consistency) — clamped for overdue runs (observed:
+HRRR 1.9h old on a 1h interval) and decommissioned models whose metadata has
+gone stale (observed: `ecmwf_ifs04`, 18 months). `best_match` has no `meta.json`,
+so it needs the minimum over candidate models. Geocoding needs none of this —
+GeoNames is static, which is why its host serves no `meta.json`. See the
+`TODO(result-cache)` on `defineWeatherFunction`.
+
+**Worker-side `omGet` cache** (`open-meteo.ts`) is the weaker layer: an
+unbounded `Map` keyed by resolved URL, per process — so it dies with the process
+and is per-isolate on Cloudflare. It still collapses duplicate coordinates
+within a batch before the client cache is populated. Note Open-Meteo returns
+**no** `Cache-Control`/`ETag`/`Expires` on any endpoint, so every TTL here is
+hand-calibrated, not negotiated.
+
 ## Testing
 
 `test/sql/*.test` are DuckDB sqllogictest files, **transport-agnostic**: the
@@ -293,6 +333,8 @@ runs against the stdio worker, a local HTTP server, or the deployed Fly app.
 - `forecast.test` — forecast_hourly/daily/current column types + row counts +
   sane physical ranges.
 - `geocoding.test` — geocoding search (incl. country filter) + elevation.
+- `cache.test` — geocoding's `vgi.cache.*` advertisement: per-value memo stores
+  then hits, memo serves match upstream, and `count` scoping isn't bypassed.
 - `lateral.test` — the blended call shapes: column args, `LATERAL`, comma join,
   the one-query geocode→forecast bridge, NULL coordinates as 1→0, and
   per-output-row provenance (asserted via `elevation` echoing its input
