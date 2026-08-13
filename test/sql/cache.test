@@ -69,3 +69,48 @@ SELECT count(*) FROM cities c, LATERAL open_meteo.main.geocoding(c.city, count :
 WHERE c.city = 'Berlin';
 ----
 5
+
+# ============================================================================
+# elevation
+#
+# Terrain elevation is a pure function of (latitude, longitude) over a fixed
+# DEM, so it advertises the longest window in the worker. Its call shape is not
+# geocoding's: 1->1 rather than 1->N, and ELEVATION_BATCH already folds 100
+# input rows into one upstream request — so the memo is asserted on repeat
+# queries, which is where it actually pays, rather than on within-batch dedup.
+# ============================================================================
+
+statement ok
+CREATE TABLE coords(lat DOUBLE, lon DOUBLE);
+
+statement ok
+INSERT INTO coords VALUES (52.52, 13.41), (27.99, 86.93), (35.68, 139.69);
+
+statement ok
+SELECT count(*) FROM coords c, LATERAL open_meteo.main.elevation(c.lat, c.lon) e;
+
+statement ok
+CREATE TABLE elev_primed AS SELECT exchange_hits AS hits, exchange_stores AS stores FROM vgi_result_cache_stats();
+
+query I
+SELECT stores > (SELECT stores FROM primed) FROM elev_primed;
+----
+true
+
+statement ok
+SELECT count(*) FROM coords c, LATERAL open_meteo.main.elevation(c.lat, c.lon) e;
+
+query I
+SELECT (SELECT exchange_hits FROM vgi_result_cache_stats()) > (SELECT hits FROM elev_primed);
+----
+true
+
+# A memoized elevation must still be the real one, and must still land on the
+# right outer row — elevation is the function lateral.test uses to pin
+# provenance, and a per-value serve reassembles that mapping from the memo.
+query IRI
+SELECT round(c.lat, 2), round(e.latitude, 2), e.elevation > 8000
+FROM coords c, LATERAL open_meteo.main.elevation(c.lat, c.lon) e
+WHERE c.lat = 27.99;
+----
+27.99	27.99	true

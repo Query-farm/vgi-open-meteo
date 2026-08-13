@@ -307,13 +307,20 @@ Two layers, and the important one is **not** the worker's.
 
 **Client-side result cache (`vgi.cache.*`).** A function advertises cacheability
 as metadata on its first emitted batch and the DuckDB extension caches the
-result — no RPC, no worker CPU, and it survives across queries. `geocoding` opts
-in via `GEOCODING_CACHE` in `functions.ts` (`cacheControlMetadata` from
-`vgi/worker-cf`, merged *over* `parentRowsMetadata` so provenance survives). It
-sets `perValue`, which memoizes each distinct input name — only meaningful for
-an exchange-mode MAP, i.e. a correlated `LATERAL`, which is every call shape
-these blended functions have. The extension latches the advertisement from an
-exchange's first output, so re-emitting it per batch is harmless.
+result — no RPC, no worker CPU, and it survives across queries. `geocoding`
+(`GEOCODING_CACHE`, 7d) and `elevation` (`ELEVATION_CACHE`, 30d) opt in, via
+`cacheControlMetadata` from `vgi/worker-cf`, merged *over* `parentRowsMetadata`
+so provenance survives. Both set `perValue`, which memoizes each distinct input
+tuple — only meaningful for an exchange-mode MAP, i.e. a correlated `LATERAL`,
+which is every call shape these blended functions have. The extension latches
+the advertisement from an exchange's first output, so re-emitting it per batch
+is harmless.
+
+The two are not equally worth it. `geocoding` is one upstream call per distinct
+name against a 600-calls/minute tier, so the memo is a large win; `elevation`
+already batches 100 coordinates per call, so `perValue` mostly buys the *repeat*
+query rather than within-batch dedup — kept because a DEM value is immutable and
+the memo is therefore always safe.
 
 The memo key is not just the input tuple: the extension folds
 `canonical_arguments` and `attach_options` into the static key, so a
@@ -354,8 +361,10 @@ Worker.
 - `forecast.test` — forecast_hourly/daily/current column types + row counts +
   sane physical ranges.
 - `geocoding.test` — geocoding search (incl. country filter) + elevation.
-- `cache.test` — geocoding's `vgi.cache.*` advertisement: per-value memo stores
-  then hits, memo serves match upstream, and `count` scoping isn't bypassed.
+- `cache.test` — the `vgi.cache.*` advertisements: per-value memo stores then
+  hits for `geocoding` and `elevation`, memo serves match upstream, `count`
+  scoping isn't bypassed, and a memoized `elevation` still lands on the right
+  outer row.
 - `lateral.test` — the blended call shapes: column args, `LATERAL`, comma join,
   the one-query geocode→forecast bridge, NULL coordinates as 1→0, and
   per-output-row provenance (asserted via `elevation` echoing its input

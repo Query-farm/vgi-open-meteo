@@ -645,6 +645,34 @@ const ELEVATION_EXAMPLES = [
     },
 ];
 
+/**
+ * Result-cache advertisement for `elevation` (`vgi.cache.*`).
+ *
+ * The strongest case in this worker: terrain elevation is a pure function of
+ * (latitude, longitude) over a fixed Copernicus DEM. There is no model run to
+ * align to — hence no `/data/<model>/static/meta.json` on its host, same as
+ * [[geocoding]] — and unlike a place database it is not even revised, so the
+ * window is set by how long we are willing to trust a coordinate rather than by
+ * anything upstream. 30 days is arbitrary in the way an immutable value's TTL
+ * always is; `staleIfError` runs to 90 so a rate-limited upstream never fails a
+ * query for a number that cannot have changed.
+ *
+ * `perValue` earns less here than it does for `geocoding`, and knowingly so:
+ * `/v1/elevation` takes comma-separated coordinates, so ELEVATION_BATCH already
+ * amortises one upstream call across 100 input rows, and the framework warns
+ * that a per-value serve only pays back when it is cheaper than calling the
+ * worker. What it still buys is the *repeat* query — a LATERAL over the same
+ * coordinates in a later statement or session serves entirely from the memo
+ * instead of re-batching, and the whole-result entry (ttl alone) covers the
+ * rest. A DEM lookup is also about as safe a memo as exists: deterministic,
+ * side-effect free, and never revised.
+ */
+const ELEVATION_CACHE = {
+  ttl: 30 * 24 * 60 * 60,
+  perValue: true,
+  staleIfError: 90 * 24 * 60 * 60,
+};
+
 const elevationBase = defineRowTransformFunction<ElevationArgs>({
   name: "elevation",
   description: "Terrain elevation (90m DEM) for a coordinate (Open-Meteo elevation).",
@@ -719,9 +747,11 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
       }
     }
 
+    // As in geocoding: cache keys merge over the provenance map, and the
+    // extension latches the advertisement from the exchange's first output.
     out.emit(
       batchFromColumns(cols, params.outputSchema),
-      parentRowsMetadata(parentRows, parentRows.length),
+      cacheControlMetadata(ELEVATION_CACHE, parentRowsMetadata(parentRows, parentRows.length)),
     );
   },
   examples: ELEVATION_EXAMPLES,
