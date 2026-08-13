@@ -45,6 +45,10 @@ ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'bun run /path/to/vgi-open-meteo/sr
 [haybarn](https://github.com/Query-farm)); `httpfs` is auto-loaded for the HTTP
 transports.
 
+The hosted worker also answers in a browser — open
+<https://vgi-open-meteo.rusty-bb6.workers.dev> for the catalog tree, every
+function's signature and docs, and a copy-paste `ATTACH` line.
+
 ### Run it yourself
 
 The npm package is a single self-contained bundle — no transitive installs, and
@@ -96,6 +100,21 @@ argument only controls how *daily* aggregates are bucketed.
 | `climate_daily` | Downscaled climate projections, 1950→2050 (needs `start_date`, `end_date`, `models`) |
 | `geocoding` | Place-name search → coordinates (positional `name`) |
 | `elevation` | Terrain elevation for a coordinate |
+
+Every one of them takes its coordinate (or place name) as a **positional**
+argument, so there is nothing to `SELECT *` from without `()`. The one
+exception is the `weather_codes` view — the WMO 4677 table, no arguments, three
+columns (`code`, `description`, `emoji`) — which is browsable on its own and
+joins to any `weather_code` column:
+
+```sql
+SELECT * FROM m.main.weather_codes ORDER BY code;
+
+SELECT f.time, w.emoji, w.description
+FROM m.main.forecast_hourly(52.52, 13.41, forecast_days := 1) f
+JOIN m.main.weather_codes w ON w.code = f.weather_code
+ORDER BY f.time;
+```
 
 ## Decoding macros
 
@@ -175,6 +194,34 @@ time; every request then routes to the `customer-*` endpoints:
 ```sql
 ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION '…', apikey 'YOUR_KEY');
 ```
+
+## Caching
+
+`geocoding` and `elevation` tell DuckDB their results are cacheable, so repeats
+are served **inside DuckDB** — no round-trip to this service, and no call to
+Open-Meteo. Both also opt into per-value memoization, which keys on each
+distinct input rather than the whole scan, so a `LATERAL` over a table of names
+or coordinates only pays for the ones it has not seen:
+
+```sql
+-- second run of this serves every city from the memo
+SELECT p.city, g.latitude, g.longitude
+FROM (VALUES ('Berlin'), ('Tokyo'), ('Glen Allen')) AS p(city),
+     LATERAL m.main.geocoding(p.city, count := 1) AS g;
+
+SELECT hits, misses, exchange_hits, exchange_stores FROM vgi_result_cache_stats();
+```
+
+They can do this because neither has an upstream schedule: place names and
+terrain elevation are static datasets, so the only question is how long to trust
+a value (7 days and 30 days respectively, and stale answers are served rather
+than failing a query if Open-Meteo rate-limits us).
+
+The **weather** functions deliberately advertise nothing. Their data turns over
+when a forecast model publishes a new run, at intervals that drift by hours, and
+a cache window measured from when *you* asked would happily serve a superseded
+forecast. Getting that right means expiring at the next model issuance, which
+this service does not do yet — so it does not pretend to.
 
 ## Discovering docs from SQL
 
