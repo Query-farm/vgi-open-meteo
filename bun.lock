@@ -10,7 +10,7 @@
         "@types/bun": "latest",
         "jose": "^6.2.3",
         "typescript": "^6.0.3",
-        "vgi": "npm:@query-farm/vgi@^0.26.0",
+        "vgi": "npm:@query-farm/vgi@^0.26.1",
         "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.20.0",
         "wrangler": "^4.100.0",
       },
@@ -249,7 +249,7 @@
 
     "unenv": ["unenv@2.0.0-rc.24", "", { "dependencies": { "pathe": "^2.0.3" } }, "sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw=="],
 
-    "vgi": ["@query-farm/vgi@0.26.0", "", { "dependencies": { "@noble/ciphers": "^2.3.0", "@query-farm/flechette": "^2.4.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": ">=0.20.0 <0.21.0" } }, "sha512-9V9Q7D+fEeYW0hsMoO1CntftQJuBbOW0KklHoKfHvZANuESxquR+uPkDEKT9ABrOeZCCSKfnIzUH6hvrdxmWLA=="],
+    "vgi": ["@query-farm/vgi@0.26.1", "", { "dependencies": { "@noble/ciphers": "^2.3.0", "@query-farm/flechette": "^2.4.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": ">=0.20.0 <0.21.0" } }, "sha512-ck1Gi+PisKFxIFdt+U2d6P9hXdOY4CAtAKjUv9ORAHSREiUvJvRDBuNGcOtT5HQMZPy132on0LfWPR3/APrEww=="],
 
     "vgi-rpc": ["@query-farm/vgi-rpc@0.20.0", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.4.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@opentelemetry/api"] }, "sha512-fdS2YjDZqCxAXqvrXOy+EF9EyTDBEP6LPwt7IRIddmVzQW26uZPteGFs/RKXXyN9BHeDb2vObT0tuF2AFvTq+g=="],
 
