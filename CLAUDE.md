@@ -247,14 +247,21 @@ suite against the deployment (`WORKER_CF`). Live at
 (there is no `vgi-open-meteo.fly.dev`; `make deploy` would create one, not update
 one), so `serve.ts` is exercised only by `make serve` / `make test-http`.
 
-CORS is opt-in in `createVgiFetch` and **off when `corsOrigins` is omitted**,
-which is how this Worker first shipped with none: the Bun entry reads
-`VGI_HTTP_CORS_ORIGINS` from the environment and the CF entry had no equivalent.
-`cf.ts` now passes `env.VGI_HTTP_CORS_ORIGINS ?? "*"` — defaulted on, so a
-missing binding degrades to open rather than silently back to broken. The landing
-page never revealed this (same-origin); Cupola did, being cross-origin. Same
-shape as the `landingInfo` bug in `cb18abe` — anything `serveVgiWorker` derives
-for the Bun entry must be passed explicitly here.
+CORS **defaults to `*`** as of vgi 0.27.0, so `cf.ts` passes
+`corsOrigins: env.VGI_HTTP_CORS_ORIGINS` only to *narrow* it per-deployment;
+leaving it unset is the correct open default, and `null` turns CORS off.
+
+That default was fixed upstream rather than here. `createVgiFetch` used to treat
+CORS as opt-in and emit no headers when the option was omitted, while
+`serveVgiWorker` had always defaulted to `*` — so the two entries in the same
+package disagreed and this Worker shipped with no `Access-Control` headers at
+all. It is a failure only a third party can see: curl doesn't care, the suite
+didn't care, and the landing page didn't care because it's same-origin. Cupola
+did, being cross-origin, so the landing page's own "Explore" link pointed at a
+UI this Worker refused to answer. Same shape as the `landingInfo` bug in
+`cb18abe` — whatever `serveVgiWorker` derives for the Bun entry has to be passed
+explicitly on the CF side, so the fix was to make the *default* right rather than
+to remember one more option here.
 
 The in-memory `omGet` cache is
 per-isolate/ephemeral on CF (correct, just lower hit-rate); back it with the CF
