@@ -49,12 +49,12 @@
   },
   "devDependencies": {
     "@query-farm/apache-arrow": "^21.1.1",
-    "@query-farm/vgi-rpc": "^0.20.0",
+    "@query-farm/vgi-rpc": "^0.21.0",
     "@types/bun": "latest",
     "jose": "^6.2.3",
     "typescript": "^6.0.3",
-    "vgi": "npm:@query-farm/vgi@^0.27.0",
-    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.20.0",
+    "vgi": "npm:@query-farm/vgi@^0.28.0",
+    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.21.0",
     "wrangler": "^4.100.0"
   }
 }
