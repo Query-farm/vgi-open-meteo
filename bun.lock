@@ -6,12 +6,12 @@
       "name": "@query-farm/vgi-open-meteo",
       "devDependencies": {
         "@query-farm/apache-arrow": "^21.1.1",
-        "@query-farm/vgi-rpc": "^0.19.5",
+        "@query-farm/vgi-rpc": "^0.20.0",
         "@types/bun": "latest",
         "jose": "^6.2.3",
         "typescript": "^6.0.3",
-        "vgi": "npm:@query-farm/vgi@^0.25.3",
-        "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.19.5",
+        "vgi": "npm:@query-farm/vgi@^0.26.0",
+        "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.20.0",
         "wrangler": "^4.100.0",
       },
     },
@@ -159,7 +159,7 @@
 
     "@query-farm/flechette": ["@query-farm/flechette@2.4.1", "", {}, "sha512-aKrkfJk7bS5fIfICCX9/O92vrTEE7mNFvzODaGXJOJPJbg1nzPUDWiCMNOvbGRX5c88iMWU3VUzMmXW1p8VHow=="],
 
-    "@query-farm/vgi-rpc": ["@query-farm/vgi-rpc@0.19.5", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.4.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@opentelemetry/api"] }, "sha512-CtBbvwA+vkxcRXteoHk1mTCx+1kgDt2DtdfJO2rAAdSl7D9DjNsYvsn8I9gGvFUGe/R1VEDvu0WGY1iDh9Vd/A=="],
+    "@query-farm/vgi-rpc": ["@query-farm/vgi-rpc@0.20.0", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.4.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@opentelemetry/api"] }, "sha512-fdS2YjDZqCxAXqvrXOy+EF9EyTDBEP6LPwt7IRIddmVzQW26uZPteGFs/RKXXyN9BHeDb2vObT0tuF2AFvTq+g=="],
 
     "@sindresorhus/is": ["@sindresorhus/is@7.2.0", "", {}, "sha512-P1Cz1dWaFfR4IR+U13mqqiGsLFf1KbayybWwdd2vfctdV6hDpUkgCY0nKOLLTMSoRd/jJNjtbqzf13K8DCCXQw=="],
 
@@ -249,9 +249,9 @@
 
     "unenv": ["unenv@2.0.0-rc.24", "", { "dependencies": { "pathe": "^2.0.3" } }, "sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw=="],
 
-    "vgi": ["@query-farm/vgi@0.25.3", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/flechette": "^2.4.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": ">=0.19.2 <0.20.0" } }, "sha512-LMLUIDHY6v4Hs2wMWSuCg7PGWJLvjqry/yA+p92dY3unmjdcnFrWbtlINWDpqEf/1ndr1jhPzdufq2V/PBsUJQ=="],
+    "vgi": ["@query-farm/vgi@0.26.0", "", { "dependencies": { "@noble/ciphers": "^2.3.0", "@query-farm/flechette": "^2.4.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": ">=0.20.0 <0.21.0" } }, "sha512-9V9Q7D+fEeYW0hsMoO1CntftQJuBbOW0KklHoKfHvZANuESxquR+uPkDEKT9ABrOeZCCSKfnIzUH6hvrdxmWLA=="],
 
-    "vgi-rpc": ["@query-farm/vgi-rpc@0.19.5", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.4.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@opentelemetry/api"] }, "sha512-CtBbvwA+vkxcRXteoHk1mTCx+1kgDt2DtdfJO2rAAdSl7D9DjNsYvsn8I9gGvFUGe/R1VEDvu0WGY1iDh9Vd/A=="],
+    "vgi-rpc": ["@query-farm/vgi-rpc@0.20.0", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.4.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@opentelemetry/api"] }, "sha512-fdS2YjDZqCxAXqvrXOy+EF9EyTDBEP6LPwt7IRIddmVzQW26uZPteGFs/RKXXyN9BHeDb2vObT0tuF2AFvTq+g=="],
 
     "wordwrapjs": ["wordwrapjs@5.1.1", "", {}, "sha512-0yweIbkINJodk27gX9LBGMzyQdBDan3s/dEAiwBOj+Mf0PPyWL6/rikalkv8EeD0E8jm4o5RXEOrFTP3NXbhJg=="],
 
