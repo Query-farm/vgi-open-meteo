@@ -20,6 +20,11 @@ import {
 
 import { buildRegistry, openMeteoCatalog, OpenMeteoCatalog } from "../catalog.js";
 
+// Shown on the landing page. Kept in step with package.json by hand: the
+// tsconfig has neither resolveJsonModule nor package.json in `include`, so an
+// import here would need config changes for one string.
+const WORKER_VERSION = "0.2.1";
+
 export interface Env {
   /** Stable secret, SHA-256'd to the 32-byte state-token key. Set via
    *  `wrangler secret put VGI_SIGNING_KEY`. */
@@ -54,6 +59,17 @@ async function getHandler(env: Env): Promise<(req: Request) => Promise<Response>
     // Serve RPC (and GET /health) at the root, matching the Fly/Bun deployment.
     prefix: "",
     serverId: "vgi-open-meteo",
+    repositoryUrl: "https://github.com/Query-farm/vgi-open-meteo",
+    // Without landingInfo the handler falls back to vgi-rpc's generic "this is
+    // an RPC endpoint" placeholder and stops serving /vgi-client.js, so the
+    // shared landing page — catalog tree, Cupola CTA, ATTACH snippet — never
+    // mounts. The Bun entry gets this for free because serveVgiWorker builds it
+    // from its required name/doc/version; the CF entry has to pass it.
+    landingInfo: {
+      name: "open-meteo",
+      doc: "Query the Open-Meteo weather API family from DuckDB as SQL table functions.",
+      version: WORKER_VERSION,
+    },
   });
   cached = { key: keyMaterial, handler };
   return handler;
