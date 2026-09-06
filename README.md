@@ -186,6 +186,28 @@ SELECT * FROM m.main.historical_daily(52.52, 13.41, '2024-06-01', '2024-06-07');
 `temperature_unit` ∈ {`celsius`,`fahrenheit`}, `wind_speed_unit` ∈
 {`kmh`,`ms`,`mph`,`kn`}, `precipitation_unit` ∈ {`mm`,`inch`}.
 
+## Semantic model
+
+The catalog publishes the stable identity `farm.query.open_meteo`. Each table
+function is a semantic entity whose physical output members, measures, source
+arguments, and units are carried in DuckDB tags. Repeated weather and ensemble
+members use `vgi.semantic_members` templates; consumers expand those templates
+before validation and compilation.
+
+Function inputs are also selectable parameter-backed dimensions. For example,
+`requested_latitude`, `requested_longitude`, `requested_forecast_days`, and
+`requested_models` preserve the invocation context even though Open-Meteo does
+not repeat those values in every response row. In a correlated multi-location
+query, latitude and longitude therefore resolve from each driving input row,
+not from a single scalar default.
+
+Output units are metadata rather than extra SQL columns. Static values such as
+`%`, `hPa`, `m`, and `m3/s` are attached directly. Temperature, wind-speed, and
+precipitation members use `unit_parameter`, so semantic compilation reports the
+unit selected by `temperature_unit`, `wind_speed_unit`, or
+`precipitation_unit`. UCUM spellings are used where practical; no unit ontology
+is required by the contract.
+
 ## Commercial API key (optional)
 
 Free tier needs no key. Commercial Open-Meteo customers pass their key at attach

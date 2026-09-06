@@ -8,6 +8,8 @@ require vgi
 
 require httpfs
 
+require json
+
 # ============================================================================
 # Catalog discovery
 # ============================================================================
@@ -43,7 +45,7 @@ SELECT catalog_name, schema_name FROM information_schema.schemata WHERE catalog_
 open_meteo	main
 
 # ============================================================================
-# Function discovery — 13 weather table functions (every one requires
+# Function discovery — 16 weather table functions (every one requires
 # coordinates / a search name, so there are no zero-arg catalog tables) plus 6
 # scalar decoding macros (weather_code / wind / AQI / UV → labels).
 # ============================================================================
@@ -55,6 +57,8 @@ air_quality_current
 air_quality_hourly
 climate_daily
 elevation
+ensemble_daily
+ensemble_hourly
 european_aqi_category
 flood_daily
 forecast_current
@@ -65,11 +69,46 @@ historical_daily
 historical_hourly
 marine_daily
 marine_hourly
+previous_runs_hourly
 us_aqi_category
 uv_index_category
 weather_code_emoji
 weather_code_text
 wind_compass
+
+# Semantic metadata is discoverable on the catalog, every table function, and
+# the browsable WMO-code view. Row transforms also expose the runtime capability
+# and defaults the semantic compiler needs for correlated source bindings.
+query T
+SELECT json_extract_string(tags['vgi.semantic_catalog'], '$.catalog_id')
+FROM duckdb_databases() WHERE database_name = 'open_meteo';
+----
+farm.query.open_meteo
+
+query I
+SELECT count(*)
+FROM duckdb_functions()
+WHERE database_name = 'open_meteo'
+  AND tags['vgi.semantic_entity'] IS NOT NULL
+  AND json_array_length(tags['vgi.semantic_members']) > 0;
+----
+16
+
+query T
+SELECT json_extract_string(tags['vgi.semantic_entity'], '$.entity_id')
+FROM duckdb_views()
+WHERE database_name = 'open_meteo' AND view_name = 'weather_codes';
+----
+weather_codes
+
+query TT
+SELECT input_from_args::VARCHAR, arg_default
+FROM vgi_function_arguments()
+WHERE catalog_name = 'open_meteo'
+  AND function_name = 'forecast_hourly'
+  AND arg_name = 'forecast_days';
+----
+true	7
 
 # The decoding macros are pure SQL (no RPC) and deterministic, so assert their
 # labels directly.

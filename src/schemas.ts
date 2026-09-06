@@ -110,7 +110,11 @@ export function blockSchema(config: EndpointConfig): VgiSchema {
 
   const fields: VgiField[] = [field("time", tsUtcMicros(), timeComment, false)];
   for (const v of config.variables) {
-    fields.push(field(v.name, arrowType(v), `Open-Meteo "${v.name}" value; units per request options.`));
+    const comment =
+      config.variables.length > 20
+        ? "Open-Meteo value; units follow request options."
+        : `Open-Meteo "${v.name}" value; units per request options.`;
+    fields.push(field(v.name, arrowType(v), comment));
   }
   return schema(fields);
 }

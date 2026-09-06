@@ -21,6 +21,10 @@ import {
 import { allWeatherFunctions } from "./functions.js";
 import { WEATHER_MACROS } from "./macros.js";
 import { ATTACH_OPTION_SPECS, encodeAttachOpaqueData } from "./attach-options.js";
+import {
+  SEMANTIC_CATALOG_ID,
+  WEATHER_CODES_SEMANTIC_TAGS,
+} from "./semantic.js";
 
 export const DATA_VERSION = "1.0.0";
 // `process` doesn't exist on workerd (Cloudflare); read it defensively so the
@@ -74,8 +78,9 @@ const SCHEMA_DOC_LLM =
   "climate-projection categories, plus two helpers: geocoding to resolve place names to coordinates " +
   "and elevation to look up terrain height. All functions share one calling convention — a WGS84 " +
   "latitude/longitude and named optional arguments (timezone, units, forecast_days, date ranges, " +
-  "models) — and emit UTC timestamps. Query a single point per call and combine locations in SQL " +
-  "with UNION ALL or a cross join over a coordinates table. The schema also provides inline SQL " +
+  "models) — and emit UTC timestamps. Positional arguments accept columns, so use a LATERAL join " +
+  "over a bounded coordinates table for multi-location queries or to chain geocoding into weather. " +
+  "The schema also provides inline SQL " +
   "decoding macros in its 'helpers' category — weather_code_text and weather_code_emoji (WMO code), " +
   "wind_compass (degrees to a 16-point compass), us_aqi_category / european_aqi_category, and " +
   "uv_index_category — that turn the raw coded columns into human-readable labels; call them " +
@@ -89,9 +94,9 @@ const SCHEMA_DOC_MD = [
     "geocoding and elevation helpers.",
   "",
   "Every function shares one calling convention: a WGS84 `latitude`/`longitude` (geocoding takes a " +
-    "`name`), named optional arguments, and UTC timestamps. To cover several places, read their " +
-    "coordinates from `geocoding(...)` first, then call the weather functions for each — arguments must " +
-    "be literals, so this is a two-step, not a correlated join.",
+    "`name`), named optional arguments, and UTC timestamps. Positional arguments may be columns: use " +
+    "a bounded `LATERAL` join for several locations, or chain `geocoding(...)` directly into a weather " +
+    "function in one query.",
   "",
   "### Decoding helpers",
   "",
@@ -110,88 +115,71 @@ const SCHEMA_CATEGORIES = [
   { name: "marine", title: "Marine", description: "Wave and swell forecasts for ocean points." },
   { name: "flood", title: "Flood", description: "River-discharge and flood outlooks." },
   { name: "climate", title: "Climate Projections", description: "Downscaled climate-change projections (1950 to 2050)." },
+  { name: "ensemble", title: "Ensemble Forecast", description: "Control run plus perturbed members, giving the forecast distribution rather than a single value." },
+  { name: "previous-runs", title: "Previous Runs", description: "Forecasts from successive earlier model runs, for scoring forecast skill by lead time." },
   { name: "geocoding", title: "Geocoding", description: "Place-name search returning coordinates." },
   { name: "reference", title: "Reference", description: "Terrain elevation and other coordinate lookups." },
   { name: "helpers", title: "Decoding Helpers", description: "SQL macros that translate raw codes (weather, wind, AQI, UV) into human-readable labels." },
 ];
 
-// Analyst tasks for `vgi-lint simulate`. Between them the reference_sql exercises
-// every function, macro, and the weather_codes view (VGI520 coverage).
+// Public analyst prompts for `vgi-lint simulate`. Expected queries and tool
+// requirements live in vgi-agent-tests.yaml so agents never see their graders.
 const AGENT_TEST_TASKS = [
   {
     name: "berlin_current_conditions",
     prompt: "Describe the current weather in Berlin: temperature, a text summary, an emoji, and the wind direction as a compass point.",
-    reference_sql:
-      "SELECT temperature_2m, open_meteo.main.weather_code_text(weather_code) AS conditions, " +
-      "open_meteo.main.weather_code_emoji(weather_code) AS icon, " +
-      "open_meteo.main.wind_compass(wind_direction_10m) AS wind FROM open_meteo.main.forecast_current(52.52, 13.41)",
   },
   {
     name: "tokyo_geocode_daily",
     prompt: "Find the coordinates of Tokyo and return its daily high and low temperature for the next 3 days.",
-    reference_sql: [
-      "SELECT latitude, longitude FROM open_meteo.main.geocoding('Tokyo', count := 1)",
-      "SELECT time, temperature_2m_max, temperature_2m_min FROM open_meteo.main.forecast_daily(35.6895, 139.6917, forecast_days := 3) ORDER BY time",
-    ],
   },
   {
     name: "berlin_hourly_uv",
     prompt: "For the next day in Berlin, list the hourly UV index and its WHO risk category.",
-    reference_sql:
-      "SELECT time, uv_index, open_meteo.main.uv_index_category(uv_index) AS risk " +
-      "FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) ORDER BY time",
   },
   {
     name: "everest_elevation",
     prompt: "What is the terrain elevation, in metres, at latitude 27.99 and longitude 86.93?",
-    reference_sql: "SELECT elevation FROM open_meteo.main.elevation(27.99, 86.93)",
   },
   {
     name: "berlin_historical_week",
     prompt: "Get Berlin's daily maximum temperature for the first week of June 2024, and the hourly temperature for June 1st.",
-    reference_sql: [
-      "SELECT time, temperature_2m_max FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-06-01', '2024-06-07') ORDER BY time",
-      "SELECT time, temperature_2m FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-06-01', '2024-06-02') ORDER BY time",
-    ],
   },
   {
     name: "la_air_quality_us",
     prompt: "What is the current US AQI in Los Angeles and its EPA health category?",
-    reference_sql:
-      "SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category " +
-      "FROM open_meteo.main.air_quality_current(34.05, -118.24)",
   },
   {
     name: "berlin_air_quality_forecast_eu",
     prompt: "Forecast the European AQI band for Berlin over the next two days.",
-    reference_sql:
-      "SELECT time, european_aqi, open_meteo.main.european_aqi_category(european_aqi) AS band " +
-      "FROM open_meteo.main.air_quality_hourly(52.52, 13.41, forecast_days := 2) ORDER BY time",
   },
   {
     name: "north_sea_marine",
     prompt: "Get the hourly wave height and the daily maximum wave height for a North Sea point (54.5, 8.0).",
-    reference_sql: [
-      "SELECT time, wave_height FROM open_meteo.main.marine_hourly(54.5, 8.0, forecast_days := 2) ORDER BY time",
-      "SELECT time, wave_height_max FROM open_meteo.main.marine_daily(54.5, 8.0, forecast_days := 3) ORDER BY time",
-    ],
   },
   {
     name: "berlin_flood_outlook",
     prompt: "What is the river-discharge (flood) outlook near Berlin over the coming weeks?",
-    reference_sql:
-      "SELECT time, river_discharge FROM open_meteo.main.flood_daily(52.52, 13.41, forecast_days := 30) ORDER BY time",
   },
   {
     name: "berlin_climate_projection",
     prompt: "Project Berlin's daily maximum temperature for the year 2040 under a downscaled climate model.",
-    reference_sql:
-      "SELECT time, temperature_2m_max FROM open_meteo.main.climate_daily(52.52, 13.41, '2040-01-01', '2040-12-31', models := 'MRI_AGCM3_2_S') ORDER BY time",
   },
   {
     name: "weather_codes_lookup",
     prompt: "List every WMO weather code with its text description and emoji.",
-    reference_sql: "SELECT code, description, emoji FROM open_meteo.main.weather_codes ORDER BY code",
+  },
+  {
+    name: "berlin_ensemble_spread",
+    prompt: "Compare the control and first ensemble-member temperature forecasts for Berlin, hourly and daily.",
+  },
+  {
+    name: "berlin_previous_runs",
+    prompt: "Compare Berlin's latest hourly temperature forecast with forecasts made one and three days earlier.",
+  },
+  {
+    name: "multi_location_average_temperature",
+    prompt: "For Berlin and Tokyo, return average hourly temperature by location and UTC hour for the next day using the semantic model.",
   },
 ];
 
@@ -264,6 +252,7 @@ const WEATHER_CODES_VIEW = {
         sql: "SELECT f.time, w.description, w.emoji FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) f JOIN open_meteo.main.weather_codes w ON w.code = f.weather_code ORDER BY f.time",
       },
     ]),
+    ...WEATHER_CODES_SEMANTIC_TAGS,
   },
 };
 
@@ -289,6 +278,14 @@ export const openMeteoCatalog: CatalogDescriptor = {
     "vgi.license": "MIT",
     "vgi.support_contact": "https://github.com/open-meteo/open-meteo/issues",
     "vgi.support_policy_url": "https://open-meteo.com/en/terms",
+    "vgi.semantic_catalog": JSON.stringify({
+      catalog_id: SEMANTIC_CATALOG_ID,
+      binding_key: "open_meteo",
+      title: "Open-Meteo Weather",
+      description:
+        "Point weather, climate, air-quality, marine, geocoding, and terrain data from Open-Meteo.",
+      default_timezone: "UTC",
+    }),
   },
   schemas: [
     {

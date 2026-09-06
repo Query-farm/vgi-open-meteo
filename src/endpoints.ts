@@ -51,6 +51,15 @@ export interface EndpointConfig {
   defaultForecastDays?: number;
   /** Default models string (climate needs at least one). */
   defaultModels?: string;
+  /**
+   * Variables to REQUEST, when that differs from the columns returned.
+   * The ensemble endpoint expands one requested variable into a control column
+   * plus one column per perturbed member, and rejects the member names as
+   * request parameters — so `variables` (the output schema) lists every member
+   * while this lists only the base variable actually sent to the API.
+   * Defaults to the names in `variables`.
+   */
+  requestVariables?: string[];
 }
 
 const MIN = 60 * 1000;
@@ -175,6 +184,51 @@ const CLIMATE_DAILY: WeatherVar[] = [
   d("snowfall_sum"),
   d("wind_speed_10m_max"),
   d("shortwave_radiation_sum"),
+];
+
+
+// Previous-runs: the SAME variable from successive earlier model runs, so a
+// forecast can be scored against what actually happened. `temperature_2m` is
+// the latest run; `_previous_dayN` is the value that run N days ago predicted
+// for this same timestamp. Only HOURLY carries the `_previous_dayN` suffixes —
+// the API rejects the daily variants (`temperature_2m_max_previous_day1` is a
+// 400), so a daily max at a given lead time is computed from these hours.
+const PREVIOUS_RUNS_HOURLY: WeatherVar[] = [
+  d("temperature_2m"),
+  d("temperature_2m_previous_day1"),
+  d("temperature_2m_previous_day2"),
+  d("temperature_2m_previous_day3"),
+  d("temperature_2m_previous_day4"),
+  d("temperature_2m_previous_day5"),
+  d("temperature_2m_previous_day6"),
+  d("temperature_2m_previous_day7"),
+  d("precipitation"),
+  d("precipitation_previous_day1"),
+  d("precipitation_previous_day2"),
+  d("precipitation_previous_day3"),
+  d("wind_speed_10m"),
+  d("wind_speed_10m_previous_day1"),
+  d("wind_speed_10m_previous_day2"),
+  d("wind_speed_10m_previous_day3"),
+];
+
+// Ensemble: one column for the control run plus one per perturbed member, so a
+// row is the full spread at a timestamp. Member counts are MODEL-dependent
+// (gfs_seamless returns 30, icon_seamless 39), and a model that returns fewer
+// simply leaves the extra columns NULL — parseBlock coerces a missing key to
+// null rather than failing. Thirty members covers the default GFS ensemble;
+// higher-member models are truncated at member30.
+const ENSEMBLE_MEMBERS = 30;
+const members = (base: string): WeatherVar[] =>
+  Array.from({ length: ENSEMBLE_MEMBERS }, (_, k) =>
+    d(`${base}_member${String(k + 1).padStart(2, "0")}`),
+  );
+
+const ENSEMBLE_HOURLY: WeatherVar[] = [d("temperature_2m"), ...members("temperature_2m")];
+
+const ENSEMBLE_DAILY: WeatherVar[] = [
+  d("temperature_2m_max"),
+  ...members("temperature_2m_max"),
 ];
 
 // ---------------------------------------------------------------------------
@@ -307,6 +361,52 @@ export const ENDPOINTS: EndpointConfig[] = [
     category: "flood",
     cacheTtlMs: HOUR,
     defaultForecastDays: 30,
+  },
+  {
+    name: "previous_runs_hourly",
+    description:
+      "Hourly forecasts from successive earlier model runs, for scoring forecast skill by lead time.",
+    host: "previous-runs-api.open-meteo.com",
+    path: "/v1/forecast",
+    block: "hourly",
+    variables: PREVIOUS_RUNS_HOURLY,
+    args: { forecastDays: true, timezone: true, units: true, models: true },
+    categories: ["weather", "forecast", "verification"],
+    category: "previous-runs",
+    cacheTtlMs: HOUR,
+    defaultForecastDays: 1,
+  },
+  {
+    name: "ensemble_hourly",
+    description:
+      "Hourly ensemble forecast: control run plus up to 30 perturbed members, one column each.",
+    host: "ensemble-api.open-meteo.com",
+    path: "/v1/ensemble",
+    block: "hourly",
+    variables: ENSEMBLE_HOURLY,
+    requestVariables: ["temperature_2m"],
+    args: { forecastDays: true, timezone: true, units: true, models: true },
+    categories: ["weather", "forecast", "ensemble"],
+    category: "ensemble",
+    cacheTtlMs: 30 * MIN,
+    defaultForecastDays: 7,
+    defaultModels: "gfs_seamless",
+  },
+  {
+    name: "ensemble_daily",
+    description:
+      "Daily ensemble maximum temperature: control run plus up to 30 perturbed members.",
+    host: "ensemble-api.open-meteo.com",
+    path: "/v1/ensemble",
+    block: "daily",
+    variables: ENSEMBLE_DAILY,
+    requestVariables: ["temperature_2m_max"],
+    args: { forecastDays: true, timezone: true, units: true, models: true },
+    categories: ["weather", "forecast", "ensemble"],
+    category: "ensemble",
+    cacheTtlMs: 30 * MIN,
+    defaultForecastDays: 7,
+    defaultModels: "gfs_seamless",
   },
   {
     name: "climate_daily",

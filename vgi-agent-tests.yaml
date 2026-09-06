@@ -1,0 +1,110 @@
+# Private grader sidecar for vgi-lint simulate / semantic-simulate. The worker
+# publishes only task names and prompts; these reference queries are never sent
+# to the analyst agent.
+tasks:
+  - name: berlin_current_conditions
+    reference_sql: >-
+      SELECT temperature_2m,
+             open_meteo.main.weather_code_text(weather_code) AS conditions,
+             open_meteo.main.weather_code_emoji(weather_code) AS icon,
+             open_meteo.main.wind_compass(wind_direction_10m) AS wind
+      FROM open_meteo.main.forecast_current(52.52, 13.41)
+
+  - name: tokyo_geocode_daily
+    reference_sql:
+      - SELECT latitude, longitude FROM open_meteo.main.geocoding('Tokyo', count := 1)
+      - >-
+        SELECT time, temperature_2m_max, temperature_2m_min
+        FROM open_meteo.main.forecast_daily(35.6895, 139.6917, forecast_days := 3)
+        ORDER BY time
+
+  - name: berlin_hourly_uv
+    reference_sql: >-
+      SELECT time, uv_index,
+             open_meteo.main.uv_index_category(uv_index) AS risk
+      FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1)
+      ORDER BY time
+
+  - name: everest_elevation
+    reference_sql: SELECT elevation FROM open_meteo.main.elevation(27.99, 86.93)
+
+  - name: berlin_historical_week
+    reference_sql:
+      - >-
+        SELECT time, temperature_2m_max
+        FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-06-01', '2024-06-07')
+        ORDER BY time
+      - >-
+        SELECT time, temperature_2m
+        FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-06-01', '2024-06-02')
+        ORDER BY time
+
+  - name: la_air_quality_us
+    reference_sql: >-
+      SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category
+      FROM open_meteo.main.air_quality_current(34.05, -118.24)
+
+  - name: berlin_air_quality_forecast_eu
+    reference_sql: >-
+      SELECT time, european_aqi,
+             open_meteo.main.european_aqi_category(european_aqi) AS band
+      FROM open_meteo.main.air_quality_hourly(52.52, 13.41, forecast_days := 2)
+      ORDER BY time
+
+  - name: north_sea_marine
+    reference_sql:
+      - >-
+        SELECT time, wave_height
+        FROM open_meteo.main.marine_hourly(54.5, 8.0, forecast_days := 2)
+        ORDER BY time
+      - >-
+        SELECT time, wave_height_max
+        FROM open_meteo.main.marine_daily(54.5, 8.0, forecast_days := 3)
+        ORDER BY time
+
+  - name: berlin_flood_outlook
+    reference_sql: >-
+      SELECT time, river_discharge
+      FROM open_meteo.main.flood_daily(52.52, 13.41, forecast_days := 30)
+      ORDER BY time
+
+  - name: berlin_climate_projection
+    reference_sql: >-
+      SELECT time, temperature_2m_max
+      FROM open_meteo.main.climate_daily(
+        52.52, 13.41, '2040-01-01', '2040-12-31', models := 'MRI_AGCM3_2_S'
+      )
+      ORDER BY time
+
+  - name: weather_codes_lookup
+    reference_sql: SELECT code, description, emoji FROM open_meteo.main.weather_codes ORDER BY code
+
+  - name: berlin_ensemble_spread
+    reference_sql:
+      - >-
+        SELECT time, temperature_2m, temperature_2m_member01
+        FROM open_meteo.main.ensemble_hourly(52.52, 13.41, forecast_days := 1)
+        ORDER BY time
+      - >-
+        SELECT time, temperature_2m_max, temperature_2m_max_member01
+        FROM open_meteo.main.ensemble_daily(52.52, 13.41, forecast_days := 3)
+        ORDER BY time
+
+  - name: berlin_previous_runs
+    reference_sql: >-
+      SELECT time, temperature_2m, temperature_2m_previous_day1,
+             temperature_2m_previous_day3
+      FROM open_meteo.main.previous_runs_hourly(52.52, 13.41, forecast_days := 1)
+      ORDER BY time
+
+  - name: multi_location_average_temperature
+    reference_sql: >-
+      SELECT c.location_id, f.time, avg(f.temperature_2m) AS average_temperature_2m
+      FROM (VALUES ('berlin', 52.52, 13.41), ('tokyo', 35.69, 139.69))
+           AS c(location_id, latitude, longitude),
+           LATERAL open_meteo.main.forecast_hourly(
+             c.latitude, c.longitude, forecast_days := 1
+           ) AS f
+      GROUP BY c.location_id, f.time
+      ORDER BY c.location_id, f.time
+    required_tools: [query_semantic_model]

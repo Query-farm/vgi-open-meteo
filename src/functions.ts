@@ -63,6 +63,11 @@ const LONGITUDE_CONSTRAINT: ArgumentConstraints = { ge: -180, le: 180 };
 import { parseBlock } from "./weather.js";
 import { omGet, type OmQuery } from "./open-meteo.js";
 import { apiKeyFromParams } from "./attach-options.js";
+import {
+  ELEVATION_SEMANTIC_TAGS,
+  GEOCODING_SEMANTIC_TAGS,
+  weatherSemanticTags,
+} from "./semantic.js";
 
 // ============================================================================
 // Blended-function helpers
@@ -100,21 +105,30 @@ async function mapLimit<T, R>(
 }
 
 /**
- * Re-attach `ge`/`le`/`choices`/`pattern` to a blended function's arguments.
+ * Re-attach defaults and `ge`/`le`/`choices`/`pattern` metadata to a blended
+ * function's arguments.
  *
  * `RowTransformConfig` has no `argConstraints` field (unlike `TableFunctionConfig`),
  * but the constraints live on the ArgumentSpec, which is reachable on the built
  * function — so encode them the same way the table-function path does. Without
- * this the port would silently drop every bound and choice list from
- * `vgi_function_arguments()`, which is where agents discover valid inputs.
+ * this the port would silently drop defaults, bounds, and choice lists from
+ * `vgi_function_arguments()`, which is where the semantic compiler resolves
+ * optional parameters and agents discover valid inputs.
  */
 function withArgConstraints(
   fn: VgiFunction,
   constraints: Record<string, ArgumentConstraints>,
+  defaults: Record<string, unknown> = {},
 ): VgiFunction {
   for (const spec of fn.argumentSpecs ?? []) {
     const c = constraints[spec.name];
     if (c) Object.assign(spec, constraintSpecFields(c));
+    const defaultValue = defaults[spec.name];
+    if (defaultValue !== undefined) {
+      spec.defaultJson = JSON.stringify(
+        typeof defaultValue === "bigint" ? Number(defaultValue) : defaultValue,
+      );
+    }
   }
   return fn;
 }
@@ -274,6 +288,7 @@ function blockFunctionTags(
     "vgi.doc_md": docMd,
     "vgi.result_columns_schema": resultColumnsSchema(outputSchema),
     "vgi.category": config.category,
+    ...weatherSemanticTags(config),
   };
 }
 
@@ -290,7 +305,7 @@ function blockFunctionTags(
 function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   const outputSchema = blockSchema(config);
   const isCurrent = config.block === "current";
-  const variableList = config.variables.map((v) => v.name).join(",");
+  const variableList = (config.requestVariables ?? config.variables.map((v) => v.name)).join(",");
   const { args, namedArgs, argDefaults, argDocs, argConstraints } = buildArgSpec(config);
   const qname = QUALIFY(config.name);
 
@@ -431,7 +446,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
     },
     examples,
   });
-  return withArgConstraints(fn, argConstraints);
+  return withArgConstraints(fn, argConstraints, argDefaults);
 }
 
 const blockFunctions: VgiFunction[] = ENDPOINTS.map(defineWeatherFunction);
@@ -500,6 +515,8 @@ const GEOCODING_CACHE = {
   staleIfError: 30 * 24 * 60 * 60,
 };
 
+const GEOCODING_DEFAULTS = { count: 10n, language: "en", country_code: "" };
+
 const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   name: "geocoding",
   description: "Search places by name and return their coordinates (Open-Meteo geocoding).",
@@ -511,7 +528,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
     language: utf8(),
     country_code: utf8(),
   },
-  argDefaults: { count: 10n, language: "en", country_code: "" },
+  argDefaults: GEOCODING_DEFAULTS,
   argDocs: {
     name: "Place name to search for (>= 2 characters).",
     count: "Maximum number of results (1-100).",
@@ -541,6 +558,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
       "Key columns are `name`, `latitude`, `longitude`, `country` and the `admin1`–`admin4` regions; see the result schema for the full set. Runnable queries are in this function's example queries.",
     ].join("\n"),
     "vgi.result_columns_schema": resultColumnsSchema(GEOCODING_SCHEMA),
+    ...GEOCODING_SEMANTIC_TAGS,
   },
   onBind: () => ({ outputSchema: GEOCODING_SCHEMA }),
   process: async (params, batch, out) => {
@@ -613,11 +631,15 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   examples: GEOCODING_EXAMPLES,
 });
 
-const geocoding = withArgConstraints(geocodingBase, {
-  count: { ge: 1, le: 100 },
-  // empty (= any country) or a 2-letter ISO-3166-1 alpha2 code
-  country_code: { pattern: "^([A-Za-z]{2})?$" },
-});
+const geocoding = withArgConstraints(
+  geocodingBase,
+  {
+    count: { ge: 1, le: 100 },
+    // empty (= any country) or a 2-letter ISO-3166-1 alpha2 code
+    country_code: { pattern: "^([A-Za-z]{2})?$" },
+  },
+  GEOCODING_DEFAULTS,
+);
 
 // ============================================================================
 // elevation — terrain elevation for a coordinate
@@ -699,6 +721,7 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
       "Returns exactly one row per coordinate: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null where the model has no value for the point (open ocean, for instance). Coordinates may come from a column, and the endpoint takes them in batches of 100, so resolving a whole table of points costs one request per 100 rows rather than one per row.",
     ].join("\n"),
     "vgi.result_columns_schema": resultColumnsSchema(ELEVATION_SCHEMA),
+    ...ELEVATION_SEMANTIC_TAGS,
   },
   onBind: () => ({ outputSchema: ELEVATION_SCHEMA }),
   process: async (params, batch, out) => {
