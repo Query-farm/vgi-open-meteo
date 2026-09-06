@@ -1,6 +1,7 @@
 name = "vgi-open-meteo"
 main = "src/bin/cf.ts"
 compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
 
 # VGI_SIGNING_KEY is a Wrangler secret (see: wrangler secret put VGI_SIGNING_KEY).
 # It seals the per-request state tokens; a stable value is required because
