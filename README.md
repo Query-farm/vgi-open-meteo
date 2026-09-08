@@ -208,6 +208,15 @@ unit selected by `temperature_unit`, `wind_speed_unit`, or
 `precipitation_unit`. UCUM spellings are used where practical; no unit ontology
 is required by the contract.
 
+Weather entities also publish explicit conformance groups for UTC valid time,
+requested latitude/longitude, and WMO weather code. A multi-fact request can
+use `branch_members` to align these equivalent members across compatible
+functions; the compiler never guesses equivalence from matching names. The
+generated model includes reusable filtered measures where the source exposes
+the required member: `daylight_period_count` owns `is_day = true`, and
+`wet_period_count` owns `precipitation > 0`. Those predicates are compiled as
+parameters and remain separate from source-access safety filters.
+
 ## Commercial API key (optional)
 
 Free tier needs no key. Commercial Open-Meteo customers pass their key at attach

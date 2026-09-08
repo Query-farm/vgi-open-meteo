@@ -36,6 +36,8 @@ describe("Open-Meteo semantic metadata", () => {
     );
     expect(byId.get("requested_latitude")).toMatchObject({
       kind: "dimension",
+      conformance_id:
+        "farm.query.open_meteo.invocation.requested_latitude",
       source_argument: "latitude",
       data_type: "DOUBLE",
       unit: "deg",
@@ -45,6 +47,33 @@ describe("Open-Meteo semantic metadata", () => {
       unit: "d",
     });
     expect(byId.get("requested_models")?.source_argument).toBe("models");
+    expect(byId.get("time")?.conformance_id).toBe(
+      "farm.query.open_meteo.weather.valid_time",
+    );
+    expect(byId.get("weather_code")?.conformance_id).toBe(
+      "farm.query.open_meteo.wmo.weather_code",
+    );
+  });
+
+  test("publishes reusable filtered weather measures", () => {
+    const byId = new Map(
+      expanded(weather("forecast_hourly")).map((member) => [
+        member.member_id,
+        member,
+      ]),
+    );
+    expect(byId.get("daylight_period_count")).toMatchObject({
+      aggregation: "count_rows",
+      filter: { member: "is_day", operator: "eq", value: true },
+      additivity: "additive",
+      unit: "1",
+    });
+    expect(byId.get("wet_period_count")).toMatchObject({
+      aggregation: "count_rows",
+      filter: { member: "precipitation", operator: "gt", value: 0 },
+      additivity: "additive",
+      unit: "1",
+    });
   });
 
   test("declares default and requested physical units through function arguments", () => {

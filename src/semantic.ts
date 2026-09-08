@@ -11,6 +11,13 @@ export const SEMANTIC_CATALOG_ID = "farm.query.open_meteo";
 
 type SemanticMember = Record<string, unknown>;
 
+const CONFORMANCE = {
+  requestedLatitude: `${SEMANTIC_CATALOG_ID}.invocation.requested_latitude`,
+  requestedLongitude: `${SEMANTIC_CATALOG_ID}.invocation.requested_longitude`,
+  validTime: `${SEMANTIC_CATALOG_ID}.weather.valid_time`,
+  weatherCode: `${SEMANTIC_CATALOG_ID}.wmo.weather_code`,
+} as const;
+
 const TEMPERATURE_UNITS = {
   argument: "temperature_unit",
   values: { celsius: "Cel", fahrenheit: "[degF]" },
@@ -185,6 +192,7 @@ function sourceArgumentMembers(config: EndpointConfig): SemanticMember[] {
   const members: SemanticMember[] = [
     {
       member_id: "requested_latitude",
+      conformance_id: CONFORMANCE.requestedLatitude,
       source_argument: "latitude",
       data_type: "DOUBLE",
       unit: "deg",
@@ -192,6 +200,7 @@ function sourceArgumentMembers(config: EndpointConfig): SemanticMember[] {
     },
     {
       member_id: "requested_longitude",
+      conformance_id: CONFORMANCE.requestedLongitude,
       source_argument: "longitude",
       data_type: "DOUBLE",
       unit: "deg",
@@ -302,6 +311,7 @@ function weatherMembers(config: EndpointConfig): SemanticMember[] {
     {
       member_id: "time",
       kind: "time_dimension",
+      conformance_id: CONFORMANCE.validTime,
       column: "time",
       data_type: "TIMESTAMP WITH TIME ZONE",
       timezone: "UTC",
@@ -327,6 +337,9 @@ function weatherMembers(config: EndpointConfig): SemanticMember[] {
 
   const dimensions = config.variables.map((variable) => ({
     member_id: variable.name,
+    ...(variable.name === "weather_code"
+      ? { conformance_id: CONFORMANCE.weatherCode }
+      : {}),
     column: variable.name,
     data_type: dataType(variable),
     ...physicalUnit(variable, Boolean(config.args.units)),
@@ -352,6 +365,30 @@ function weatherMembers(config: EndpointConfig): SemanticMember[] {
         additivity: "non_additive",
       },
       members: measures,
+    });
+  }
+
+  const variableNames = new Set(config.variables.map((variable) => variable.name));
+  if (variableNames.has("is_day")) {
+    members.push({
+      member_id: "daylight_period_count",
+      kind: "measure",
+      aggregation: "count_rows",
+      filter: { member: "is_day", operator: "eq", value: true },
+      additivity: "additive",
+      unit: "1",
+      description: `Number of ${config.block} result rows identified by Open-Meteo as daylight.`,
+    });
+  }
+  if (variableNames.has("precipitation")) {
+    members.push({
+      member_id: "wet_period_count",
+      kind: "measure",
+      aggregation: "count_rows",
+      filter: { member: "precipitation", operator: "gt", value: 0 },
+      additivity: "additive",
+      unit: "1",
+      description: `Number of ${config.block} result rows with total precipitation greater than zero.`,
     });
   }
   return members;
@@ -625,6 +662,7 @@ export const WEATHER_CODES_SEMANTIC_TAGS: Record<string, string> = {
     {
       member_id: "weather_code",
       kind: "identifier",
+      conformance_id: CONFORMANCE.weatherCode,
       column: "code",
       data_type: "INTEGER",
       description: "Unique WMO 4677 weather-interpretation code.",
