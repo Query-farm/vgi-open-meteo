@@ -12,7 +12,6 @@ import {
 } from "vgi";
 import {
   createHttpHandler,
-  unpackStateToken,
   type AuthenticateFn,
   type OAuthResourceMetadata,
 } from "vgi-rpc";
@@ -97,17 +96,7 @@ const registry = buildRegistry(new FunctionRegistry());
 const catalogInterface = new OpenMeteoCatalog(openMeteoCatalog, registry);
 const composite = new CompositeCatalogInterface([catalogInterface]);
 
-const protocol = buildVgiProtocol({
-  registry,
-  catalogInterface: composite,
-  recoverExchangeState: async (opaqueData: Uint8Array) => {
-    const tokenString = new TextDecoder().decode(opaqueData);
-    // No authenticate callback → all requests are anonymous, so the token's
-    // AEAD AAD is bound to the anonymous principal (pass undefined to match).
-    const unpacked = await unpackStateToken(tokenString, tokenKey, TOKEN_TTL, undefined);
-    return arrowStateSerializer.deserialize(unpacked.stateBytes);
-  },
-});
+const protocol = buildVgiProtocol({ registry, catalogInterface: composite });
 
 const vgiHandler = createHttpHandler(protocol, {
   prefix: PREFIX,
