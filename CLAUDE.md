@@ -233,8 +233,8 @@ has no `process`.
 
 `make cf-deploy` (= `wrangler deploy`) ships `src/bin/cf.ts` per `wrangler.toml`.
 The flechette Arrow backend is selected automatically by the `workerd` export
-condition — no arrow-js reaches the edge (~717 KiB gzip bundle as of vgi 0.33 /
-vgi-rpc 0.25; it grew from ~148 KiB with vgi-rpc 0.19, which statically inlines
+condition — no arrow-js reaches the edge (~718 KiB gzip bundle as of vgi 0.36 /
+vgi-rpc 0.25.4; it grew from ~148 KiB with vgi-rpc 0.19, which statically inlines
 the standardized landing page + browser client bundle into `handler.ts` — they
 bundle whether or not the worker opts in via `landingInfo`). Before the first
 real deploy, set the state-token key once: `make cf-secret` (random 32-byte hex →
