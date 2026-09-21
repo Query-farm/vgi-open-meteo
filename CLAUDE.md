@@ -307,12 +307,19 @@ runs a weather query under a fake key.
 
 ## Timestamps
 
-Every block is fetched with `timeformat=unixtime`. Open-Meteo shifts unixtime by
-the response's `utc_offset_seconds` whenever a `timezone` is set, so
-`unixToUtcMicros()` subtracts the offset to recover true UTC before emitting
-`Timestamp(us, UTC)` micros. This applies to `time` and to timestamp-valued
-variables like `sunrise`/`sunset`. The `timezone` arg still controls how *daily*
-aggregates are bucketed; the emitted instants are always UTC.
+Every block is fetched with `timeformat=unixtime`, and Open-Meteo's unixtime is
+**true UTC regardless of `timezone`** — verified on every host we call. So
+`unixToUtcMicros()` just scales seconds to `Timestamp(us, UTC)` micros, for
+`time` and for timestamp-valued variables like `sunrise`/`sunset`. The
+`timezone` arg controls where the window starts (local midnight) and how
+*daily* aggregates are bucketed; it never moves the emitted instants.
+
+Never subtract `utc_offset_seconds`. The worker used to, believing unixtime was
+shifted into local time, which double-shifted every non-GMT timestamp — Tokyo's
+day starting at 06:00Z and its sunrise at 11:28Z (20:28 local). `forecast.test`
+pins the correct values (day start 15Z, sunrise 19–21Z) using `::TIMESTAMP`, a
+core UTC cast; `epoch()`/`AT TIME ZONE` on a TIMESTAMPTZ need ICU, which the
+test runner doesn't have.
 
 ## Caching
 

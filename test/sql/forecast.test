@@ -64,6 +64,18 @@ WHERE temperature_2m_max < temperature_2m_min;
 ----
 true
 
+# Instants are true UTC whatever zone is requested. `timezone` moves where each
+# day starts — Tokyo's local midnight is 15:00Z — and never the instants, so
+# Tokyo's sunrise (~04:25–06:50 JST all year) always lands at 19–21Z. The
+# worker used to subtract utc_offset_seconds on top of Open-Meteo's already-UTC
+# unixtime, which put the day start at 06Z and sunrise at ~11Z (20:28 JST).
+# ::TIMESTAMP is a core UTC cast, so this needs no ICU.
+query II
+SELECT hour(time::TIMESTAMP), hour(sunrise::TIMESTAMP) BETWEEN 19 AND 21
+FROM open_meteo.main.forecast_daily(35.69, 139.69, timezone := 'Asia/Tokyo', forecast_days := 1);
+----
+15	true
+
 # ============================================================================
 # forecast_current — exactly one row
 # ============================================================================

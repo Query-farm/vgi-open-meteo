@@ -476,8 +476,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
 
       for (let i = 0; i < pending.length; i++) {
         const data = responses[i];
-        const offset = Number(data?.utc_offset_seconds ?? 0);
-        const block = parseBlock(data?.[config.block], config.variables, offset, isCurrent);
+        const block = parseBlock(data?.[config.block], config.variables, isCurrent);
         appendAll(cols.time, block.time);
         for (const v of config.variables) appendAll(cols[v.name], block[v.name]);
         for (let k = 0; k < block.time.length; k++) parentRows.push(pending[i].row);
