@@ -182,6 +182,23 @@ ORDER BY p.city;
 Literals still work exactly as before — `forecast_current(37.66542, -77.49359)`
 is the same function, called with a one-row input.
 
+For daily data you usually want each place's days to run midnight to midnight
+*locally* — Tokyo's "today" is not Berlin's. Pass `timezone := 'auto'`: every
+row is its own request, so `'auto'` is resolved from that row's coordinates and
+each city gets its own zone, even though the argument is a single constant:
+
+```sql
+SELECT p.city, d.time, d.temperature_2m_max, d.temperature_2m_min
+FROM (VALUES ('Berlin'), ('Tokyo'), ('Glen Allen')) AS p(city),
+     LATERAL m.main.geocoding(p.city, count := 1) AS g,
+     LATERAL m.main.forecast_daily(g.latitude, g.longitude, timezone := 'auto') AS d
+ORDER BY p.city, d.time;
+```
+
+Named arguments are constants, so `timezone := g.timezone` is rejected by
+DuckDB ("does not support lateral join column parameters") — `'auto'` is the
+way to get a per-location zone. The returned instants are UTC either way.
+
 ## Units and options
 
 ```sql

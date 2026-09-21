@@ -132,6 +132,19 @@ FROM places p,
 args are read off the input `batch` in `process()`, never from `params.args`.
 That split is what `buildArgSpec()` returns (`args` vs `namedArgs`).
 
+This is DuckDB's rule, not ours: the table-in-out binder evaluates every named
+parameter as a constant, so `timezone := g.timezone` fails with "does not
+support lateral join column parameters". Don't "fix" it with a per-row
+`timezone` — the need it seems to serve, each place bucketed in its own local
+day, is already met by `timezone := 'auto'`, because every row is its own
+upstream request and `'auto'` resolves from that row's coordinates
+(`lateral.test` pins Tokyo 15Z / Reykjavik 0Z in one query). A trailing
+positional `timezone` overload was built and rejected: the semantic model
+refuses overloaded function names (`ambiguous_function_overload`, and tags are
+entry-level so both overloads look like duplicate entity hosts), overloads go by
+arity so they don't scale to a second per-row arg, and it's a no-op on
+`forecast_current` (UTC instants, no buckets).
+
 Four things the blended shape forces, all load-bearing in `functions.ts`:
 
 1. **No finalize.** Map-shaped only — DuckDB forbids `FinalExecute` under

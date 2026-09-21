@@ -109,3 +109,30 @@ query I
 SELECT count(*) FROM open_meteo.main.elevation(52.52, 13.41);
 ----
 1
+
+# ============================================================================
+# Per-location timezone via 'auto'
+# ============================================================================
+
+# `timezone` is a named arg, so it is one constant for the whole query — but
+# every row is its own upstream request, so 'auto' is resolved from each row's
+# coordinates and each place's days start at its own local midnight. Tokyo is
+# 15Z and Reykjavik 0Z all year (neither has DST). ::TIMESTAMP is a core UTC
+# cast, so this needs no ICU.
+query TI
+SELECT p.city, hour(w.time::TIMESTAMP) AS utc_hour
+FROM (VALUES ('Tokyo'), ('Reykjavik')) AS p(city),
+     LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g,
+     LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, timezone := 'auto', forecast_days := 1) AS w
+ORDER BY p.city;
+----
+Reykjavik	0
+Tokyo	15
+
+# A named arg can't read a column — DuckDB binds it as a constant. This pins the
+# boundary that 'auto' exists to route around.
+statement error
+SELECT * FROM (VALUES ('Asia/Tokyo')) AS t(tz),
+     LATERAL open_meteo.main.forecast_daily(35.69, 139.69, timezone := t.tz);
+----
+lateral join column parameters

@@ -228,11 +228,13 @@ const SCHEMA_EXAMPLE_QUERIES = [
       "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
   },
   {
-    description: "A column of place names geocoded and forecast in one query.",
+    description:
+      "A column of place names geocoded and forecast in one query, each city's days in its own local " +
+      "time ('auto' is resolved from each row's coordinates).",
     sql:
       "SELECT p.city, d.time, d.temperature_2m_max FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
       "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
-      "LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, forecast_days := 3) AS d " +
+      "LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, forecast_days := 3, timezone := 'auto') AS d " +
       "ORDER BY p.city, d.time",
   },
 ];

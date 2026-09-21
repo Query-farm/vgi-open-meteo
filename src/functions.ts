@@ -215,7 +215,10 @@ function buildArgSpec(config: EndpointConfig): {
   if (config.args.timezone) {
     namedArgs.timezone = utf8();
     argDefaults.timezone = "GMT";
-    argDocs.timezone = "IANA timezone or 'auto'. Daily aggregates are bucketed in this zone; time columns are always emitted as UTC.";
+    argDocs.timezone =
+      "IANA timezone or 'auto'. Daily aggregates are bucketed in this zone; time columns are always emitted as UTC. " +
+      "'auto' resolves from each row's own coordinates, so under a LATERAL join every location gets its local zone. " +
+      "The value must be a constant — a named argument cannot read a column.";
   }
   if (config.args.units) {
     namedArgs.temperature_unit = utf8();
@@ -256,7 +259,14 @@ function blockFunctionTags(
   if (config.args.forecastDays) extras.push("the window is set with forecast_days / past_days");
   if (config.args.units) extras.push("units are configurable (temperature_unit, wind_speed_unit, precipitation_unit)");
   if (config.args.models) extras.push("specific models can be selected with the models argument");
-  if (config.args.timezone) extras.push("timezone only shifts how daily buckets are aligned — instants stay UTC");
+  if (config.args.timezone) {
+    extras.push(
+      config.block === "current"
+        ? "timezone does not change the result — instants are emitted in UTC and there are no buckets"
+        : "timezone only shifts where the window starts and how daily buckets are aligned — instants stay UTC; " +
+          "use timezone := 'auto' to give every location its own local day, since it is resolved from each row's coordinates",
+    );
+  }
   const extraNote = extras.length ? ` Notes: ${extras.join("; ")}.` : "";
 
   const cols = config.variables.slice(0, 3).map((v) => `\`${v.name}\``).join(", ");
@@ -407,6 +417,22 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       `LATERAL ${qname}(g.latitude, g.longitude${reqPos}) AS w`,
     description: "A column of place names geocoded and queried in one pass.",
   });
+  // Per-location local time needs no per-row argument: every row is its own
+  // upstream request, so a constant 'auto' is resolved from each row's own
+  // coordinates. (A named arg can't read a column anyway — DuckDB binds it as
+  // a constant.) Pointless for `current`, which has no window or buckets.
+  if (config.args.timezone && !isCurrent) {
+    examples.push({
+      sql:
+        `SELECT p.city, ${latPreview} FROM (VALUES ('${place1}'), ('${place2}')) AS p(city), ` +
+        `LATERAL ${geocode}(p.city, count := 1) AS g, ` +
+        `LATERAL ${qname}(g.latitude, g.longitude${reqPos}, timezone := 'auto') AS w ORDER BY p.city, w.time`,
+      description:
+        config.block === "daily"
+          ? "Several places, each bucketed in its own local day: 'auto' resolves the zone from each row's coordinates."
+          : "Several places, each window starting at its own local midnight: 'auto' resolves the zone per row.",
+    });
+  }
 
   const fn = defineRowTransformFunction<Record<string, any>>({
     name: config.name,
