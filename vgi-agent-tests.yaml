@@ -108,3 +108,18 @@ tasks:
       GROUP BY c.location_id, f.time
       ORDER BY c.location_id, f.time
     required_tools: [query_semantic_model]
+
+  - name: scheveningen_marine_by_name
+    reference_sql: >-
+      SELECT w.time, w.wave_height
+      FROM open_meteo.main.geocoding('Scheveningen', count := 1) AS g,
+           LATERAL open_meteo.main.marine_hourly(
+             g.latitude, g.longitude, forecast_days := 2
+           ) AS w
+      ORDER BY w.time
+
+  - name: denver_elevation_by_name
+    reference_sql: >-
+      SELECT g.name, e.elevation
+      FROM open_meteo.main.geocoding('Denver', count := 1) AS g,
+           LATERAL open_meteo.main.elevation(g.latitude, g.longitude) AS e

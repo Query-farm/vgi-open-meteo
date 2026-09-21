@@ -181,6 +181,17 @@ const AGENT_TEST_TASKS = [
     name: "multi_location_average_temperature",
     prompt: "For Berlin and Tokyo, return average hourly temperature by location and UTC hour for the next day using the semantic model.",
   },
+  // The two below deliberately withhold coordinates: a person asking about the
+  // weather names a place, so the analyst has to find the geocoding bridge
+  // rather than be handed a latitude.
+  {
+    name: "scheveningen_marine_by_name",
+    prompt: "How high are the waves at Scheveningen over the next two days? I don't know its coordinates.",
+  },
+  {
+    name: "denver_elevation_by_name",
+    prompt: "How far above sea level is Denver, in metres?",
+  },
 ];
 
 const EXECUTABLE_EXAMPLES = [
@@ -189,6 +200,14 @@ const EXECUTABLE_EXAMPLES = [
     description: "elevation() echoes the requested coordinate and adds terrain height.",
     sql: "SELECT latitude, longitude FROM open_meteo.main.elevation(52.52, 13.41)",
     expected_result: [{ latitude: 52.52, longitude: 13.41 }],
+  },
+  {
+    name: "geocoding_resolves_place_name",
+    description:
+      "geocoding() turns a place name into the coordinate the weather functions want — the " +
+      "starting point for anyone who has a city rather than a latitude.",
+    sql: "SELECT name, country_code FROM open_meteo.main.geocoding('Tokyo', count := 1)",
+    expected_result: [{ name: "Tokyo", country_code: "JP" }],
   },
 ];
 
@@ -200,6 +219,21 @@ const SCHEMA_EXAMPLE_QUERIES = [
   {
     description: "Geocode a place name; its coordinates feed the forecast functions.",
     sql: "SELECT name, latitude, longitude FROM open_meteo.main.geocoding('Paris', count := 1)",
+  },
+  {
+    description: "The usual starting point: a place name joined straight through to its current weather.",
+    sql:
+      "SELECT g.name, w.temperature_2m, open_meteo.main.weather_code_text(w.weather_code) AS conditions " +
+      "FROM open_meteo.main.geocoding('Paris', count := 1) AS g, " +
+      "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+  },
+  {
+    description: "A column of place names geocoded and forecast in one query.",
+    sql:
+      "SELECT p.city, d.time, d.temperature_2m_max FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
+      "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
+      "LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, forecast_days := 3) AS d " +
+      "ORDER BY p.city, d.time",
   },
 ];
 
@@ -250,6 +284,18 @@ const WEATHER_CODES_VIEW = {
       {
         description: "Label a forecast by joining to the code table.",
         sql: "SELECT f.time, w.description, w.emoji FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) f JOIN open_meteo.main.weather_codes w ON w.code = f.weather_code ORDER BY f.time",
+      },
+      {
+        description: "Same, for a place named rather than located: geocode, forecast, then label.",
+        sql:
+          "SELECT g.name, f.time, w.description, w.emoji " +
+          "FROM open_meteo.main.geocoding('Oslo', count := 1) AS g, " +
+          "LATERAL open_meteo.main.forecast_hourly(g.latitude, g.longitude, forecast_days := 1) AS f " +
+          "JOIN open_meteo.main.weather_codes w ON w.code = f.weather_code ORDER BY f.time",
+      },
+      {
+        description: "Browse the lookup on its own — no arguments needed.",
+        sql: "SELECT code, description, emoji FROM open_meteo.main.weather_codes ORDER BY code",
       },
     ]),
     ...WEATHER_CODES_SEMANTIC_TAGS,

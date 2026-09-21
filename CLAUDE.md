@@ -36,7 +36,20 @@ schemas, agent_test_tasks, executable_examples) — see `catalog.ts`, the
 `blockFunctionTags()` generator in `functions.ts`, and `resultColumnsSchema()` in
 `schemas.ts`. Runnable examples live in each object's `vgi.example_queries` /
 function `examples` (project columns, not `SELECT *`), never as a ```sql fence in
-a description.
+a description. Don't write "See the example queries." into a `doc_md` — VGI181
+errors on that exact sentence as cross-worker boilerplate.
+
+**Every function and macro advertises both example shapes.** A hardcoded
+`(52.52, 13.41)` is what the API takes; a place name is what a person has, so
+each object carries at least one example that opens with `geocoding(...)` and
+LATERALs into the real function. `open_meteo_catalog.test` pins the count (22 =
+16 functions + 6 macros) and fails if one loses its geocoded form. The block
+generator emits two of them per endpoint (one place, then a column of places)
+off `EndpointConfig.examplePlaces`, which defaults to Berlin/Tokyo — the marine
+endpoints override it to Scheveningen/Brighton because a city centroid inland
+geocodes to all-null waves. The `scheveningen_marine_by_name` /
+`denver_elevation_by_name` agent tasks withhold coordinates on purpose, so the
+analyst has to find the bridge.
 
 DuckDB attach examples:
 

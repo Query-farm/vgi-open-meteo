@@ -80,7 +80,17 @@ SELECT * FROM m.main.forecast_current(52.52, 13.41);
 SELECT time AT TIME ZONE 'Europe/Berlin' AS local_time, temperature_2m
 FROM m.main.forecast_hourly(52.52, 13.41, forecast_days := 3)
 ORDER BY time;
+
+-- ...or skip the coordinate lookup entirely and name the place
+SELECT g.name, w.temperature_2m, m.main.weather_code_text(w.weather_code) AS conditions
+FROM m.main.geocoding('Berlin', count := 1) AS g,
+     LATERAL m.main.forecast_current(g.latitude, g.longitude) AS w;
 ```
+
+Coordinates are what the API takes, but a place name is usually what you have.
+`geocoding` bridges the two and the positional arguments accept columns, so the
+whole thing stays one query — see [Place names → weather, in one
+query](#place-names--weather-in-one-query).
 
 `latitude`/`longitude` are **required positional** arguments; everything else is
 a **named** optional argument (`timezone`, `forecast_days`, `past_days`,

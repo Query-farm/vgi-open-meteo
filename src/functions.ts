@@ -268,7 +268,10 @@ function blockFunctionTags(
   const docLlm =
     `Point weather query returning ${config.block} values from the Open-Meteo API. ` +
     `${config.description} Supply latitude and longitude in WGS84 degrees; it ${rowPhrase}, ` +
-    `with the \`time\` column always emitted in UTC.${extraNote}`;
+    `with the \`time\` column always emitted in UTC.${extraNote} ` +
+    `Starting from a place name instead of a coordinate? Both positional arguments accept column ` +
+    `references, so feed them the \`latitude\`/\`longitude\` of a \`geocoding(...)\` match in the ` +
+    `same query — the example queries show that form.`;
 
   const docMd = [
     `## ${config.name}`,
@@ -277,6 +280,10 @@ function blockFunctionTags(
     "",
     `Pass \`latitude\` and \`longitude\` in WGS84 degrees. The function ${rowPhrase}; ` +
       `every timestamp is emitted in UTC.${extraNote}`,
+    "",
+    `If you have a place name rather than a coordinate, resolve it with \`geocoding(...)\` and join ` +
+      `its \`latitude\`/\`longitude\` straight in — the positional arguments take column references, ` +
+      `so name → weather stays one query.`,
     "",
     `Returned columns are \`time\` plus ${cols} and more — see the result schema for the ` +
       `full set with types.${decodeNote} Runnable queries live in this function's example ` +
@@ -349,9 +356,24 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
     });
   }
   if (config.args.models && config.defaultModels) {
+    // Climate is the only models-taking endpoint with required dates, and its
+    // interesting window is a projected year rather than the shared `reqPos`
+    // range; everything else (the ensembles) takes no dates at all, so it must
+    // NOT inherit climate's — and must name a model its own host serves.
+    const modelsDemo = config.args.dateRange
+      ? {
+          positional: ", '2040-01-01', '2040-12-31'",
+          models: "MRI_AGCM3_2_S,EC_Earth3P_HR",
+          description: "Pick specific downscaled climate models.",
+        }
+      : {
+          positional: "",
+          models: config.defaultModels,
+          description: "Pick a specific weather model rather than the default blend.",
+        };
     examples.push({
-      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41, '2040-01-01', '2040-12-31', models := 'MRI_AGCM3_2_S,EC_Earth3P_HR')${order}`,
-      description: "Pick specific downscaled climate models.",
+      sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41${modelsDemo.positional}, models := '${modelsDemo.models}')${order}`,
+      description: modelsDemo.description,
     });
   }
   // The blended payoff: coordinates can come from a column, so many locations
@@ -362,6 +384,28 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       `SELECT c.city, ${latPreview} FROM (VALUES ('Berlin', 52.52, 13.41), ('Tokyo', 35.69, 139.69)) AS c(city, lat, lon), ` +
       `LATERAL ${qname}(c.lat, c.lon${reqPos}) AS w`,
     description: "Many locations in one query — coordinates supplied by a column.",
+  });
+
+  // ...and the shape a human actually reaches for: name the place, let
+  // geocoding() resolve the coordinate. Every example above hardcodes a
+  // latitude/longitude, which almost nobody has to hand; these two show the
+  // bridge, first for one place and then for a column of them. Both sides take
+  // column references, so it stays a single query.
+  const [place1, place2] = config.examplePlaces ?? ["Berlin", "Tokyo"];
+  const geocode = QUALIFY("geocoding");
+  const orderW = isCurrent ? "" : " ORDER BY w.time";
+  examples.push({
+    sql:
+      `SELECT g.name, ${latPreview} FROM ${geocode}('${place1}', count := 1) AS g, ` +
+      `LATERAL ${qname}(g.latitude, g.longitude${reqPos}) AS w${orderW}`,
+    description: `${base}, starting from the place name '${place1}' instead of a coordinate.`,
+  });
+  examples.push({
+    sql:
+      `SELECT p.city, ${latPreview} FROM (VALUES ('${place1}'), ('${place2}')) AS p(city), ` +
+      `LATERAL ${geocode}(p.city, count := 1) AS g, ` +
+      `LATERAL ${qname}(g.latitude, g.longitude${reqPos}) AS w`,
+    description: "A column of place names geocoded and queried in one pass.",
   });
 
   const fn = defineRowTransformFunction<Record<string, any>>({
@@ -480,6 +524,20 @@ const GEOCODING_EXAMPLES = [
         "SELECT p.city, g.name, g.latitude, g.longitude FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
         "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g",
       description: "Resolve a whole column of place names in one correlated join.",
+    },
+    {
+      sql:
+        "SELECT g.name, w.temperature_2m, open_meteo.main.weather_code_text(w.weather_code) AS conditions " +
+        "FROM open_meteo.main.geocoding('Reykjavík', count := 1) AS g, " +
+        "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+      description: "The bridge itself: a place name straight through to current weather.",
+    },
+    {
+      sql:
+        "SELECT p.city, w.temperature_2m FROM (VALUES ('Berlin'), ('Tokyo')) AS p(city), " +
+        "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
+        "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+      description: "A column of place names joined through to current weather in one query.",
     },
 ];
 
@@ -665,6 +723,19 @@ const ELEVATION_EXAMPLES = [
         "LATERAL open_meteo.main.elevation(c.lat, c.lon) AS e",
       description: "Elevation for a whole table of coordinates in one correlated join.",
     },
+    {
+      sql:
+        "SELECT g.name, e.elevation FROM open_meteo.main.geocoding('Denver', count := 1) AS g, " +
+        "LATERAL open_meteo.main.elevation(g.latitude, g.longitude) AS e",
+      description: "Elevation for a place looked up by name rather than by coordinate.",
+    },
+    {
+      sql:
+        "SELECT p.city, e.elevation FROM (VALUES ('Denver'), ('La Paz'), ('Amsterdam')) AS p(city), " +
+        "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
+        "LATERAL open_meteo.main.elevation(g.latitude, g.longitude) AS e ORDER BY e.elevation DESC",
+      description: "Rank a column of place names by terrain height, geocoding each one.",
+    },
 ];
 
 /**
@@ -712,13 +783,17 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
       "Terrain elevation for a coordinate, from Open-Meteo's 90 m digital elevation model. " +
       "Supply latitude/longitude in WGS84 degrees; it returns a single row echoing the requested " +
       "coordinate plus its `elevation` in metres above sea level. Use it for altitude lookups or to " +
-      "enrich a coordinate before charting weather against terrain height.",
+      "enrich a coordinate before charting weather against terrain height. If you have a place name " +
+      "rather than a coordinate, join `geocoding(...)` in front of it — both arguments take column " +
+      "references, so name → elevation is one query.",
     "vgi.doc_md": [
       "## elevation",
       "",
       "Terrain elevation (metres above sea level) for a coordinate, sampled from a 90 m digital elevation model (Copernicus DEM).",
       "",
       "Returns exactly one row per coordinate: the requested `latitude` and `longitude` echoed back, plus `elevation`. `elevation` is null where the model has no value for the point (open ocean, for instance). Coordinates may come from a column, and the endpoint takes them in batches of 100, so resolving a whole table of points costs one request per 100 rows rather than one per row.",
+      "",
+      "Place names go through `geocoding(...)` first; because its output columns can feed these arguments directly, that is still a single query — one request resolves the name, one resolves the height.",
     ].join("\n"),
     "vgi.result_columns_schema": resultColumnsSchema(ELEVATION_SCHEMA),
     ...ELEVATION_SEMANTIC_TAGS,

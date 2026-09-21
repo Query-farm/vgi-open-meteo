@@ -101,6 +101,27 @@ WHERE database_name = 'open_meteo' AND view_name = 'weather_codes';
 ----
 weather_codes
 
+# Coordinates are what the API takes, but a place name is what a person has.
+# Every function and macro must therefore advertise at least one example that
+# opens with geocoding(), alongside the hardcoded-coordinate ones — 16 table
+# functions + 6 macros. Losing these would leave the metadata teaching only the
+# shape nobody starts from.
+query I
+SELECT count(DISTINCT function_name)
+FROM duckdb_functions()
+WHERE database_name = 'open_meteo'
+  AND tags['vgi.example_queries'] LIKE '%open_meteo.main.geocoding(%';
+----
+22
+
+# The browsable code table advertises the geocoded join too.
+query I
+SELECT tags['vgi.example_queries'] LIKE '%open_meteo.main.geocoding(%'
+FROM duckdb_views()
+WHERE database_name = 'open_meteo' AND view_name = 'weather_codes';
+----
+true
+
 query TT
 SELECT input_from_args::VARCHAR, arg_default
 FROM vgi_function_arguments()

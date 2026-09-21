@@ -52,6 +52,13 @@ export interface EndpointConfig {
   /** Default models string (climate needs at least one). */
   defaultModels?: string;
   /**
+   * Two place names used by the generated *geocoded* examples — the shape a
+   * human actually starts from (`geocoding('Scheveningen')` rather than
+   * `(52.10, 4.28)`). Defaults to Berlin/Tokyo; the marine endpoints override
+   * it because a city centroid inland resolves to all-null waves.
+   */
+  examplePlaces?: [string, string];
+  /**
    * Variables to REQUEST, when that differs from the columns returned.
    * The ensemble endpoint expands one requested variable into a control column
    * plus one column per perturbed member, and rejects the member names as
@@ -335,6 +342,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     category: "marine",
     cacheTtlMs: 30 * MIN,
     defaultForecastDays: 7,
+    examplePlaces: ["Scheveningen", "Brighton"],
   },
   {
     name: "marine_daily",
@@ -348,6 +356,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     category: "marine",
     cacheTtlMs: 30 * MIN,
     defaultForecastDays: 7,
+    examplePlaces: ["Scheveningen", "Brighton"],
   },
   {
     name: "flood_daily",

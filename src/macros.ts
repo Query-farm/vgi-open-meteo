@@ -106,8 +106,13 @@ interface MacroSpec {
   keywords: string[];
   docLlm: string;
   docMd: string;
-  /** Example that applies the macro to a real column (VGI513), not a literal. */
-  example: { description: string; sql: string };
+  /**
+   * Examples that apply the macro to a real column (VGI513), not a literal.
+   * Each macro carries two: one against a hardcoded coordinate, and one that
+   * starts from a place name via `geocoding(...)` — the form a human reaching
+   * for "what's the weather in X" actually writes.
+   */
+  examples: { description: string; sql: string }[];
 }
 
 function scalarMacro(s: MacroSpec): MacroDescriptor {
@@ -125,7 +130,7 @@ function scalarMacro(s: MacroSpec): MacroDescriptor {
       // Prose only — runnable queries live in vgi.example_queries, not in a
       // ```sql fence in the description (VGI179).
       "vgi.doc_md": [`## ${s.name}`, "", s.docMd].join("\n"),
-      "vgi.example_queries": JSON.stringify([s.example]),
+      "vgi.example_queries": JSON.stringify(s.examples),
     },
   };
 }
@@ -147,10 +152,19 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
       "Turns the raw WMO `weather_code` (an integer) into an English description. Apply it to " +
       "the `weather_code` column of any forecast or historical function; see this macro's example " +
       "queries for a runnable form.",
-    example: {
-      description: "Decode the current weather code to text.",
-      sql: "SELECT weather_code, open_meteo.main.weather_code_text(weather_code) AS conditions FROM open_meteo.main.forecast_current(52.52, 13.41)",
-    },
+    examples: [
+      {
+        description: "Decode the current weather code to text.",
+        sql: "SELECT weather_code, open_meteo.main.weather_code_text(weather_code) AS conditions FROM open_meteo.main.forecast_current(52.52, 13.41)",
+      },
+      {
+        description: "Same, starting from a place name: geocode, then decode.",
+        sql:
+          "SELECT g.name, open_meteo.main.weather_code_text(w.weather_code) AS conditions " +
+          "FROM open_meteo.main.geocoding('Lisbon', count := 1) AS g, " +
+          "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+      },
+    ],
   }),
   scalarMacro({
     name: "weather_code_emoji",
@@ -166,10 +180,20 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
     docMd:
       "Maps the raw WMO `weather_code` to one weather emoji — a compact companion to " +
       "`weather_code_text` for display. See this macro's example queries for a runnable form.",
-    example: {
-      description: "Weather emoji for the current conditions.",
-      sql: "SELECT weather_code, open_meteo.main.weather_code_emoji(weather_code) AS icon FROM open_meteo.main.forecast_current(52.52, 13.41)",
-    },
+    examples: [
+      {
+        description: "Weather emoji for the current conditions.",
+        sql: "SELECT weather_code, open_meteo.main.weather_code_emoji(weather_code) AS icon FROM open_meteo.main.forecast_current(52.52, 13.41)",
+      },
+      {
+        description: "A dashboard row per named city, geocoded in the same query.",
+        sql:
+          "SELECT p.city, w.temperature_2m, open_meteo.main.weather_code_emoji(w.weather_code) AS icon " +
+          "FROM (VALUES ('Berlin'), ('Tokyo'), ('Cairo')) AS p(city), " +
+          "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
+          "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+      },
+    ],
   }),
   scalarMacro({
     name: "wind_compass",
@@ -185,10 +209,19 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
     docMd:
       "Converts a degree bearing to a 16-point compass point (`N`, `NNE`, … `NNW`). Apply it to a " +
       "`wind_direction_*` or wave-direction column; see this macro's example queries for a runnable form.",
-    example: {
-      description: "Current wind direction as a compass point.",
-      sql: "SELECT wind_direction_10m, open_meteo.main.wind_compass(wind_direction_10m) AS from_dir FROM open_meteo.main.forecast_current(52.52, 13.41)",
-    },
+    examples: [
+      {
+        description: "Current wind direction as a compass point.",
+        sql: "SELECT wind_direction_10m, open_meteo.main.wind_compass(wind_direction_10m) AS from_dir FROM open_meteo.main.forecast_current(52.52, 13.41)",
+      },
+      {
+        description: "Wind direction for a place looked up by name.",
+        sql:
+          "SELECT g.name, w.wind_speed_10m, open_meteo.main.wind_compass(w.wind_direction_10m) AS from_dir " +
+          "FROM open_meteo.main.geocoding('Wellington', count := 1) AS g, " +
+          "LATERAL open_meteo.main.forecast_current(g.latitude, g.longitude) AS w",
+      },
+    ],
   }),
   scalarMacro({
     name: "us_aqi_category",
@@ -204,10 +237,19 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
     docMd:
       "Maps a US AQI number to its EPA health category. Apply it to the `us_aqi` column of an " +
       "air_quality function; see this macro's example queries for a runnable form.",
-    example: {
-      description: "US AQI category for current conditions in Los Angeles.",
-      sql: "SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category FROM open_meteo.main.air_quality_current(34.05, -118.24)",
-    },
+    examples: [
+      {
+        description: "US AQI category for current conditions in Los Angeles.",
+        sql: "SELECT us_aqi, open_meteo.main.us_aqi_category(us_aqi) AS category FROM open_meteo.main.air_quality_current(34.05, -118.24)",
+      },
+      {
+        description: "Same city by name — geocode, then band the AQI.",
+        sql:
+          "SELECT g.name, a.us_aqi, open_meteo.main.us_aqi_category(a.us_aqi) AS category " +
+          "FROM open_meteo.main.geocoding('Los Angeles', count := 1) AS g, " +
+          "LATERAL open_meteo.main.air_quality_current(g.latitude, g.longitude) AS a",
+      },
+    ],
   }),
   scalarMacro({
     name: "european_aqi_category",
@@ -223,10 +265,21 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
     docMd:
       "Maps a European AQI number to its CAMS band (distinct from the US scale). Apply it to the " +
       "`european_aqi` column of an air_quality function; see this macro's example queries for a runnable form.",
-    example: {
-      description: "European AQI band for current conditions in Berlin.",
-      sql: "SELECT european_aqi, open_meteo.main.european_aqi_category(european_aqi) AS band FROM open_meteo.main.air_quality_current(52.52, 13.41)",
-    },
+    examples: [
+      {
+        description: "European AQI band for current conditions in Berlin.",
+        sql: "SELECT european_aqi, open_meteo.main.european_aqi_category(european_aqi) AS band FROM open_meteo.main.air_quality_current(52.52, 13.41)",
+      },
+      {
+        description: "Rank named European cities by their current AQI band.",
+        sql:
+          "SELECT p.city, a.european_aqi, open_meteo.main.european_aqi_category(a.european_aqi) AS band " +
+          "FROM (VALUES ('Berlin'), ('Milan'), ('Warsaw')) AS p(city), " +
+          "LATERAL open_meteo.main.geocoding(p.city, count := 1) AS g, " +
+          "LATERAL open_meteo.main.air_quality_current(g.latitude, g.longitude) AS a " +
+          "ORDER BY a.european_aqi DESC",
+      },
+    ],
   }),
   scalarMacro({
     name: "uv_index_category",
@@ -241,9 +294,19 @@ export const WEATHER_MACROS: MacroDescriptor[] = [
     docMd:
       "Maps a UV index number to its WHO exposure-risk category. Apply it to the `uv_index` column " +
       "of a forecast or air_quality function; see this macro's example queries for a runnable form.",
-    example: {
-      description: "UV-index risk category over the next day of hourly forecast.",
-      sql: "SELECT time, uv_index, open_meteo.main.uv_index_category(uv_index) AS risk FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) ORDER BY time",
-    },
+    examples: [
+      {
+        description: "UV-index risk category over the next day of hourly forecast.",
+        sql: "SELECT time, uv_index, open_meteo.main.uv_index_category(uv_index) AS risk FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1) ORDER BY time",
+      },
+      {
+        description: "Peak UV risk tomorrow for a place named rather than located.",
+        sql:
+          "SELECT w.time, w.uv_index, open_meteo.main.uv_index_category(w.uv_index) AS risk " +
+          "FROM open_meteo.main.geocoding('Nairobi', count := 1) AS g, " +
+          "LATERAL open_meteo.main.forecast_hourly(g.latitude, g.longitude, forecast_days := 1) AS w " +
+          "ORDER BY w.uv_index DESC LIMIT 5",
+      },
+    ],
   }),
 ];
