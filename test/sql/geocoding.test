@@ -4,6 +4,9 @@
 
 require-env VGI_OPEN_METEO_WORKER
 
+# Transport failures must fail the suite rather than silently skip it.
+set ignore_error_messages
+
 statement ok
 LOAD vgi;
 
