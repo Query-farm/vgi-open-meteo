@@ -25,11 +25,11 @@ jobs:
         with:
           bun-version: latest
 
-      # node, not bun, runs the published bin — npx hands you node. The smoke
-      # test below is the only place that assumption gets checked.
+      # Wrangler requires Node 22. The published bundle is checked separately
+      # under Node 20 below, matching the package's supported runtime floor.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -45,6 +45,10 @@ jobs:
 
       - name: Build the npm bundle
         run: bun run build:npm
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
       - name: Verify the Node bundle over VGI IPC
         run: bun run scripts/smoke-npm.ts
