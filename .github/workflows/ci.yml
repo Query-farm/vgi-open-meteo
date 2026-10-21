@@ -1,16 +1,14 @@
 # Build gates that run on every push and PR.
 #
-# The sqllogictest suite is deliberately NOT here: it needs a DuckDB built with
-# the vgi + httpfs extensions statically linked, and it queries the live
-# Open-Meteo API. Both are real dependencies to stand up in CI, and a suite that
-# fails when a third-party weather API rate-limits teaches nothing. What runs
-# here is what CI can answer deterministically — does it typecheck, does the
-# published bundle build, and does that bundle actually start under plain node.
+# Unit, build, Node IPC and stdio/HTTP SQL integration gates run before
+# publishing a container. SQL integration uses the signed VGI protocol 2.2
+# extension and exercises the live Open-Meteo API.
 name: CI
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -39,31 +37,21 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Unit tests
+        run: bun run test
+
+      - name: Validate Cloudflare bundle
+        run: bunx wrangler deploy --dry-run
+
       - name: Build the npm bundle
         run: bun run build:npm
 
-      - name: Smoke-test the bundle under node
-        # The bundle is self-contained and the banner polyfills `require` for
-        # vgi-rpc's synchronous stdio writer. Both are easy to break silently in
-        # a dependency bump, and the failure mode is a worker that dies on its
-        # first write — long after `npx` reports success. Starting it and
-        # watching for the readiness line catches that here instead.
-        run: |
-          node dist/worker.mjs > /tmp/worker.log 2>&1 &
-          pid=$!
-          for _ in $(seq 1 40); do
-            grep -q "calling run()" /tmp/worker.log && break
-            sleep 0.25
-          done
-          kill "$pid" 2>/dev/null || true
-          if ! grep -q "calling run()" /tmp/worker.log; then
-            echo "::error::worker did not start under node"
-            cat /tmp/worker.log
-            exit 1
-          fi
-          echo "worker started under node $(node --version)"
+      - name: Verify the Node bundle over VGI IPC
+        run: bun run scripts/smoke-npm.ts
+
 
   docker:
+    needs: [build, integration]
     name: Docker image
     runs-on: ubuntu-latest
     permissions:
@@ -129,3 +117,24 @@ jobs:
           curl -fsS http://127.0.0.1:8000/health | tee /tmp/health.json
           grep -q '"status":"ok"' /tmp/health.json
           docker rm -f smoke
+
+  integration:
+    name: SQL integration (${{ matrix.transport }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        transport: [stdio, http]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: astral-sh/setup-uv@v5
+      - run: bun install --frozen-lockfile
+      - name: Install matching SQL runner and signed extensions
+        run: |
+          uv tool install haybarn-unittest==1.5.6rc1
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "FORCE INSTALL vgi FROM community; INSTALL httpfs; INSTALL json;" | uvx --from haybarn-cli==1.5.6rc1 haybarn
+      - name: Run SQL integration suite
+        run: make test-${{ matrix.transport }} TEST_RUNNER="$HOME/.local/bin/haybarn-unittest"

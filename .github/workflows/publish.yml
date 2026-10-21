@@ -54,19 +54,8 @@ jobs:
       - name: Build the bundle
         run: bun run build:npm
 
-      - name: Verify the bundle runs under node
-        # The published bin is the bundle, and npx runs it with node. If it
-        # cannot start here it cannot start for anyone, and npm publishes are
-        # not reversible after 72 hours.
-        run: |
-          node dist/worker.mjs > /tmp/worker.log 2>&1 &
-          pid=$!
-          for _ in $(seq 1 40); do
-            grep -q "calling run()" /tmp/worker.log && break
-            sleep 0.25
-          done
-          kill "$pid" 2>/dev/null || true
-          grep -q "calling run()" /tmp/worker.log || { cat /tmp/worker.log; exit 1; }
+      - name: Verify the Node bundle over VGI IPC
+        run: bun run scripts/smoke-npm.ts
 
       # No NODE_AUTH_TOKEN: this publishes through npm trusted publishing, the
       # same as the other Query Farm packages. The `id-token: write` permission

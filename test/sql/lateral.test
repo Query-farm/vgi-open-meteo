@@ -4,9 +4,11 @@
 
 require-env VGI_OPEN_METEO_WORKER
 
-require vgi
+statement ok
+LOAD vgi;
 
-require httpfs
+statement ok
+LOAD httpfs;
 
 statement ok
 ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');

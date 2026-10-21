@@ -4,11 +4,14 @@
 
 require-env VGI_OPEN_METEO_WORKER
 
-require vgi
+statement ok
+LOAD vgi;
 
-require httpfs
+statement ok
+LOAD httpfs;
 
-require json
+statement ok
+LOAD json;
 
 # ============================================================================
 # Catalog discovery
