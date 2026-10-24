@@ -506,6 +506,14 @@ lives elsewhere. The tests hit the **live Open-Meteo API**, so they need network
 access. `test-cf` hits the deployment, which runs open (no auth configured), so
 no token is needed.
 
+**The SQL suites can't reliably pass on GitHub Actions.** Open-Meteo throttles
+GitHub-hosted runner IPs, which are shared. Partway through a run, connections
+start to hang rather than return a 429: the worker's 15 s fetch timeout fires
+(`AbortError: The operation was aborted`), and plain `curl` from the same runner
+hangs too. Either lane (stdio or HTTP) can fail. Treat a red "SQL integration"
+job as expected and run the suites locally instead. The deploy goes to
+Cloudflare, which GitHub CI doesn't gate.
+
 ## arrow-js single-copy (npm deps)
 
 arrow-js uses an `instanceof`-based visitor for type serialization, so two copies

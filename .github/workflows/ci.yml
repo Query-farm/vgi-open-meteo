@@ -122,6 +122,9 @@ jobs:
           grep -q '"status":"ok"' /tmp/health.json
           docker rm -f smoke
 
+  # Expected to fail intermittently: Open-Meteo throttles GitHub-hosted runner
+  # IPs, so live requests hang until the worker's fetch timeout aborts them.
+  # Run the suites locally instead (see CLAUDE.md, "Testing").
   integration:
     name: SQL integration (${{ matrix.transport }})
     runs-on: ubuntu-latest
