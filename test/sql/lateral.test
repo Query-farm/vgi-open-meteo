@@ -120,7 +120,8 @@ SELECT count(*) FROM open_meteo.main.elevation(52.52, 13.41);
 # ============================================================================
 
 # `timezone` is a named arg, so it is one constant for the whole query — but
-# every row is its own upstream request, so 'auto' is resolved from each row's
+# Open-Meteo resolves 'auto' per location, even when the rows share one
+# multi-location request, so it is resolved from each row's
 # coordinates and each place's days start at its own local midnight. Tokyo is
 # 15Z and Reykjavik 0Z all year (neither has DST). ::TIMESTAMP is a core UTC
 # cast, so this needs no ICU.

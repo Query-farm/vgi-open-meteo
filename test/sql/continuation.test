@@ -1,0 +1,180 @@
+# name: test/sql/continuation.test
+# description: multi-location upstream requests answered as continued output (live Open-Meteo API)
+# group: [vgi_open_meteo]
+
+require-env VGI_OPEN_METEO_WORKER
+
+# Transport failures must fail the suite rather than silently skip it.
+set ignore_error_messages
+
+statement ok
+LOAD vgi;
+
+statement ok
+LOAD httpfs;
+
+statement ok
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+
+# The weather functions pack a call's distinct locations into multi-location
+# requests (weighted at most 10 Open-Meteo API calls and 100 locations each) and
+# answer the call in replies of up to 4 such requests, saying HAVE_MORE_OUTPUT
+# until the call is done; the client fetches each next reply with a continuation
+# tick (the table_in_out.continue log event). forecast_current asks for 11
+# variables, so a location weighs 1.1 calls, a request holds 9 locations and a
+# reply 36: the 40 distinct points below need two replies, i.e. one tick.
+#
+# Request volume is kept modest on purpose (free tier): ~90 weighted calls here.
+
+statement ok
+SET threads = 1;
+
+statement ok
+CREATE TABLE grid AS
+SELECT x, 45.0 + (x // 8) * 0.75 AS lat, 2.0 + (x % 8) * 0.75 AS lon FROM range(40) t(x);
+
+statement ok
+CALL enable_logging(level := 'debug');
+
+statement ok
+CALL truncate_duckdb_logs();
+
+statement ok
+CREATE TABLE batched AS
+SELECT g.x, w.grid_latitude, w.grid_longitude, w.response_timezone, w.utc_offset_seconds
+FROM grid g, LATERAL open_meteo.main.forecast_current(g.lat, g.lon, timezone := 'auto') AS w;
+
+# One row per point, each on its own outer row.
+query II
+SELECT count(*), count(DISTINCT x) FROM batched;
+----
+40	40
+
+# One call (40 rows < input_rows_per_call), answered in more than one reply.
+query II
+SELECT
+  count(*) FILTER (WHERE regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.write_input'),
+  count(*) FILTER (WHERE regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.continue') > 0
+FROM duckdb_logs()
+WHERE type = 'VGI' AND message LIKE '%forecast_current%';
+----
+1	true
+
+statement ok
+CALL disable_logging();
+
+# ============================================================================
+# Result equivalence: batched multi-location replies vs one request per row
+#
+# Row-by-row LATERAL sends each outer row as its own call, so every upstream
+# request is a single location (a bare JSON object, not an array). The returned
+# grid cell, resolved zone and offset are deterministic per coordinate, so they
+# must agree row for row — a misattributed location would shift them.
+# ============================================================================
+
+statement ok
+SET vgi_batch_lateral = false;
+
+statement ok
+CREATE TABLE single AS
+SELECT g.x, w.grid_latitude, w.grid_longitude, w.response_timezone, w.utc_offset_seconds
+FROM grid g, LATERAL open_meteo.main.forecast_current(g.lat, g.lon, timezone := 'auto') AS w;
+
+statement ok
+SET vgi_batch_lateral = true;
+
+query I
+SELECT count(*) FROM single;
+----
+40
+
+query I
+SELECT count(*) FROM (SELECT * FROM batched EXCEPT SELECT * FROM single);
+----
+0
+
+query I
+SELECT count(*) FROM (SELECT * FROM single EXCEPT SELECT * FROM batched);
+----
+0
+
+# ============================================================================
+# Per-location timezone := 'auto' inside one multi-location request
+# ============================================================================
+
+query TI
+SELECT c.city, hour(w.time::TIMESTAMP) AS utc_hour
+FROM (VALUES ('Tokyo', 35.69, 139.69), ('Reykjavik', 64.15, -21.94), ('Berlin', 52.52, 13.41), ('Tokyo again', 35.69, 139.69)) AS c(city, lat, lon),
+     LATERAL open_meteo.main.forecast_daily(c.lat, c.lon, timezone := 'auto', forecast_days := 1) AS w
+WHERE c.city <> 'Berlin'
+ORDER BY c.city;
+----
+Reykjavik	0
+Tokyo	15
+Tokyo again	15
+
+# ============================================================================
+# Required dates are per row: one request carries per-location date lists
+# ============================================================================
+
+query TIT
+SELECT c.tag, count(*), min(w.date)::VARCHAR
+FROM (VALUES ('berlin-june', 52.52, 13.41, '2024-06-01', '2024-06-07'),
+             ('berlin-jan', 52.52, 13.41, '2024-01-01', '2024-01-03'),
+             ('tokyo-june', 35.69, 139.69, '2024-06-01', '2024-06-02'),
+             ('no-dates', 35.69, 139.69, NULL, NULL)) AS c(tag, lat, lon, s, e),
+     LATERAL open_meteo.main.historical_daily(c.lat, c.lon, c.s, c.e) AS w
+GROUP BY c.tag ORDER BY c.tag;
+----
+berlin-jan	3	2024-01-01
+berlin-june	7	2024-06-01
+tokyo-june	2	2024-06-01
+
+# ============================================================================
+# LIMIT
+#
+# Under batched LATERAL a LIMIT stops between input chunks (DuckDB drains a
+# chunk under the delim join), so the grid's replies are all still fetched —
+# from the worker's response cache here. The result is cut, and the connection
+# stays usable afterwards.
+# ============================================================================
+
+query I
+SELECT count(*) FROM (
+  SELECT w.temperature_2m FROM grid g, LATERAL open_meteo.main.forecast_current(g.lat, g.lon, timezone := 'auto') AS w LIMIT 5);
+----
+5
+
+query I
+SELECT count(*) FROM (SELECT time FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 2) LIMIT 5);
+----
+5
+
+query I
+SELECT count(*) FROM grid g, LATERAL open_meteo.main.forecast_current(g.lat, g.lon, timezone := 'auto') AS w;
+----
+40
+
+# A literal call is one location: one request, one reply, no tick.
+statement ok
+CALL enable_logging(level := 'debug');
+
+statement ok
+CALL truncate_duckdb_logs();
+
+query I
+SELECT count(*) FROM open_meteo.main.forecast_hourly(52.52, 13.41, forecast_days := 1);
+----
+24
+
+query I
+SELECT count(*)
+FROM duckdb_logs()
+WHERE type = 'VGI'
+  AND regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.continue'
+  AND message LIKE '%forecast_hourly%';
+----
+0
+
+statement ok
+CALL disable_logging();

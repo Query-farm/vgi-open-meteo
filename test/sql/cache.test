@@ -119,3 +119,113 @@ FROM coords c, LATERAL open_meteo.main.elevation(c.lat, c.lon) e
 WHERE c.lat = 27.99;
 ----
 27.99	27.99	true
+
+# ============================================================================
+# Per-value entries are stored per call (input_rows_per_call)
+#
+# geocoding declares input_rows_per_call = 8 and elevation 100 (its upstream
+# batch), and neither continues its output — the extension stores no per-value
+# entries for a call whose output continued. So a chunk split into several
+# calls still memoizes every value, and a repeat is served without a single
+# worker call.
+# ============================================================================
+
+statement ok
+SET threads = 1;
+
+statement ok
+CREATE TABLE many_cities AS SELECT * FROM (VALUES
+  ('Amsterdam'), ('Madrid'), ('Rome'), ('Vienna'), ('Prague'),
+  ('Lisbon'), ('Dublin'), ('Oslo'), ('Helsinki'), ('Warsaw')) AS t(city);
+
+statement ok
+CALL enable_logging(level := 'debug');
+
+statement ok
+CALL truncate_duckdb_logs();
+
+statement ok
+CREATE TABLE before_many AS SELECT exchange_stores AS stores FROM vgi_result_cache_stats();
+
+query I
+SELECT count(DISTINCT c.city) FROM many_cities c, LATERAL open_meteo.main.geocoding(c.city, count := 1) g;
+----
+10
+
+# Ten names went out as calls of 8 and 2.
+query II
+SELECT count(*), max(CAST(regexp_extract(message, 'input_rows=([0-9]+)', 1) AS BIGINT))
+FROM duckdb_logs()
+WHERE type = 'VGI'
+  AND regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.write_input'
+  AND message LIKE '%geocoding%';
+----
+2	8
+
+query I
+SELECT (SELECT exchange_stores FROM vgi_result_cache_stats()) - (SELECT stores FROM before_many) >= 10;
+----
+true
+
+statement ok
+CALL truncate_duckdb_logs();
+
+query I
+SELECT count(DISTINCT c.city) FROM many_cities c, LATERAL open_meteo.main.geocoding(c.city, count := 1) g;
+----
+10
+
+# Every value from the memo: no worker call at all.
+query I
+SELECT count(*)
+FROM duckdb_logs()
+WHERE type = 'VGI'
+  AND regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.write_input'
+  AND message LIKE '%geocoding%';
+----
+0
+
+# elevation: 101 distinct points = calls of 100 and 1, one upstream request each.
+# (Kept just over one call: Open-Meteo counts every coordinate against the tier.)
+statement ok
+CREATE TABLE pts AS SELECT x, 40.0 + (x // 25) * 0.1 AS lat, -5.0 + (x % 25) * 0.1 AS lon FROM range(101) t(x);
+
+statement ok
+CALL truncate_duckdb_logs();
+
+query I
+SELECT count(*) FROM pts p, LATERAL open_meteo.main.elevation(p.lat, p.lon) e WHERE e.latitude = p.lat AND e.longitude = p.lon;
+----
+101
+
+query II
+SELECT count(*), max(CAST(regexp_extract(message, 'input_rows=([0-9]+)', 1) AS BIGINT))
+FROM duckdb_logs()
+WHERE type = 'VGI'
+  AND regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.write_input'
+  AND message LIKE '%elevation%';
+----
+2	100
+
+statement ok
+CALL truncate_duckdb_logs();
+
+query I
+SELECT count(*) FROM pts p, LATERAL open_meteo.main.elevation(p.lat, p.lon) e WHERE e.latitude = p.lat AND e.longitude = p.lon;
+----
+101
+
+query I
+SELECT count(*)
+FROM duckdb_logs()
+WHERE type = 'VGI'
+  AND regexp_extract(message, '''event'': ([a-z_.]+)', 1) = 'table_in_out.write_input'
+  AND message LIKE '%elevation%';
+----
+0
+
+statement ok
+CALL disable_logging();
+
+statement ok
+RESET threads;

@@ -188,10 +188,26 @@ ORDER BY p.city;
 Literals still work exactly as before — `forecast_current(37.66542, -77.49359)`
 is the same function, called with a one-row input.
 
+### How many requests a join makes
+
+A `LATERAL` over many places does not make one Open-Meteo request per row.
+The weather functions pack the distinct coordinates of each batch into
+multi-location requests (up to 100 places, and about 10 of Open-Meteo's
+weighted API calls, per request) and stream the answer back a few requests at a
+time, so a large join returns its first rows quickly and never holds the whole
+result in the worker. `elevation` sends 100 points per request, and `geocoding`
+looks up 8 names at a time. Duplicate coordinates are fetched once.
+
+Packing saves round trips, not quota: Open-Meteo still counts every location
+(more for over 10 variables or over two weeks of data), so a join over
+thousands of places can hit the free tier's per-minute limit. A `LIMIT` on such
+a join stops at the end of the current batch of input rows (up to 2,048), not
+mid-batch.
+
 For daily data you usually want each place's days to run midnight to midnight
-*locally* — Tokyo's "today" is not Berlin's. Pass `timezone := 'auto'`: every
-row is its own request, so `'auto'` is resolved from that row's coordinates and
-each city gets its own zone, even though the argument is a single constant:
+*locally* — Tokyo's "today" is not Berlin's. Pass `timezone := 'auto'`:
+Open-Meteo resolves `'auto'` per location from each row's coordinates, so each
+city gets its own zone, even though the argument is a single constant:
 
 ```sql
 SELECT p.city, d.date, d.temperature_2m_max, d.temperature_2m_min

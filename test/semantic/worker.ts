@@ -80,5 +80,23 @@ const fetchFixture = async (input: string | URL | Request): Promise<Response> =>
   } });
   throw new Error(`Unexpected fixture parameters: ${url}`);
 };
-globalThis.fetch = fetchFixture as typeof fetch;
+// The weather functions send several locations per request (comma-separated
+// coordinate and date lists) and expect an array of per-location bodies in
+// request order, as Open-Meteo answers; answer each location as its own
+// single-location fixture request.
+const multiLocationFixture = async (input: string | URL | Request): Promise<Response> => {
+  const url = new URL(input instanceof Request ? input.url : input);
+  const lats = (url.searchParams.get("latitude") ?? "").split(",");
+  if (url.hostname === "geocoding-api.open-meteo.com" || lats.length < 2) return fetchFixture(url);
+  const lists = ["latitude", "longitude", "start_date", "end_date"].filter((k) => url.searchParams.has(k));
+  const bodies = [];
+  for (let i = 0; i < lats.length; i++) {
+    const one = new URL(url);
+    for (const k of lists) one.searchParams.set(k, url.searchParams.get(k)!.split(",")[i]);
+    const body = await (await fetchFixture(one)).json();
+    bodies.push(i === 0 ? body : { ...body, location_id: i });
+  }
+  return Response.json(bodies);
+};
+globalThis.fetch = multiLocationFixture as typeof fetch;
 await import("../../src/bin/worker.js");

@@ -22,11 +22,16 @@
 // Two constraints the blended shape imposes, both load-bearing here:
 //   1. Map-shaped, NO finalize — DuckDB forbids FinalExecute under correlated
 //      LATERAL. Everything must be emitted from process().
-//   2. process() emits ONE batch per input batch, and because these are 1->N
-//      (an hourly forecast is many rows per coordinate) every emit MUST carry
+//   2. Every turn emits exactly ONE batch, and because these are 1->N (an
+//      hourly forecast is many rows per coordinate) every emit MUST carry
 //      parentRowsMetadata saying which input row produced each output row.
 //      Without it the extension assumes an identity 1->1 map and the outer
-//      columns get stamped from the wrong row.
+//      columns get stamped from the wrong row. The weather functions answer
+//      one input batch with SEVERAL replies (continued output): process()
+//      emits the first with moreOutputMetadata(true), the client ticks, and
+//      resume() emits the next — each reply's parent rows index that same
+//      input batch, and the state between replies is a plan of inputs and
+//      positions (multi-location.ts), never buffered rows.
 
 // Value imports come from `vgi/worker-cf` (the workerd-safe facade) so the
 // Cloudflare bundle doesn't pull in the Node-only stdio Worker via the package
@@ -39,13 +44,16 @@ import {
   defineRowTransformFunction,
   float64,
   int64,
+  moreOutputMetadata,
   parentRowsMetadata,
   utf8,
+  type RowTransformProcessParams,
   type VgiBatch,
   type VgiDataType,
   type VgiFunction,
 } from "vgi/worker-cf";
 import type { ArgumentConstraints } from "vgi";
+import type { OutputCollector } from "vgi-rpc";
 
 import { ENDPOINTS, type EndpointConfig } from "./endpoints.js";
 import { blockSchema, ELEVATION_SCHEMA, GEOCODING_SCHEMA, resultColumnsSchema } from "./schemas.js";
@@ -65,6 +73,18 @@ import { omGet, omGetWithMetadata, type OmQuery } from "./open-meteo.js";
 import { contextFields, modelSelection, responseContext } from "./provenance.js";
 import { apiKeyFromParams } from "./attach-options.js";
 import {
+  callWeight,
+  emptyPlan,
+  type LocationInput,
+  planCall,
+  rangeDays,
+  REQUESTS_PER_REPLY,
+  requestRange,
+  rowsOfLocation,
+  splitLocations,
+  type WeatherPlan,
+} from "./multi-location.js";
+import {
   ELEVATION_SEMANTIC_TAGS,
   GEOCODING_SEMANTIC_TAGS,
   weatherSemanticTags,
@@ -75,16 +95,34 @@ import {
 // ============================================================================
 
 /**
- * How many upstream Open-Meteo calls a single input batch may have in flight.
+ * How many upstream geocoding calls a single call may have in flight.
  *
- * A blended function is handed a whole input chunk at once, and each row is its
- * own point query — a LATERAL over a 2048-row table is 2048 calls. Unbounded
- * `Promise.all` would open all of them at once and get us rate-limited (and on
- * workerd, exceed the per-request subrequest ceiling). The `omGet` cache
- * collapses duplicate coordinates within a batch for free, so this bounds only
- * the genuinely distinct work.
+ * Geocoding is one point query per name. Unbounded `Promise.all` over a
+ * 2048-row chunk would open all of them at once and get us rate-limited (and
+ * on workerd, exceed the per-request subrequest ceiling). It is also
+ * GEOCODING_ROWS_PER_CALL, so every call is one concurrent wave.
  */
 const MAX_UPSTREAM_CONCURRENCY = 8;
+
+/**
+ * `inputRowsPerCall` for the weather block functions: the most input rows
+ * (after the client's dedup) one call receives. It bounds the call's plan —
+ * the continuation state, which over HTTP rides every turn's state token
+ * (~40 bytes per location) — and the batch a LIMIT can't interrupt. The call
+ * itself is answered in replies of REQUESTS_PER_REPLY multi-location requests.
+ */
+const WEATHER_ROWS_PER_CALL = 256;
+
+/**
+ * `inputRowsPerCall` for `geocoding`: one call is exactly one concurrent wave
+ * of searches, answered in one reply. It does NOT continue, deliberately: the
+ * extension stores no per-value cache entries for a call whose output
+ * continued, and the per-value memo is the point of geocoding's cache. Calls
+ * of 8 also mean per-value entries are stored every 8 names, so a query that
+ * fails part-way (a 429 on the 600/minute tier) keeps what it already paid
+ * for, and each turn makes at most 8 subrequests on Cloudflare.
+ */
+const GEOCODING_ROWS_PER_CALL = MAX_UPSTREAM_CONCURRENCY;
 
 /** Map with bounded concurrency, preserving input order in the result. */
 async function mapLimit<T, R>(
@@ -436,9 +474,9 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       `LATERAL ${qname}(g.latitude, g.longitude${reqPos}) AS w`,
     description: "A column of place names geocoded and queried in one pass.",
   });
-  // Per-location local time needs no per-row argument: every row is its own
-  // upstream request, so a constant 'auto' is resolved from each row's own
-  // coordinates. (A named arg can't read a column anyway — DuckDB binds it as
+  // Per-location local time needs no per-row argument: Open-Meteo resolves a
+  // constant 'auto' per location, even within one multi-location request, so
+  // every row gets its own coordinates' zone. (A named arg can't read a column anyway — DuckDB binds it as
   // a constant.) Pointless for `current`, which has no window or buckets.
   if (config.args.timezone && !isCurrent) {
     examples.push({
@@ -453,7 +491,101 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
     });
   }
 
-  const fn = defineRowTransformFunction<Record<string, any>>({
+  const variableCount = variableList.split(",").length;
+
+  /** The query every request of a call shares: everything but the locations. */
+  const baseQuery = (params: RowTransformProcessParams<Record<string, any>>, selectedModel: string): OmQuery => {
+    const q: OmQuery = { timeformat: "unixtime", [config.block]: variableList };
+    if (config.args.timezone) q.timezone = (params.args.timezone as string) || "GMT";
+    if (config.args.units) {
+      q.temperature_unit = params.args.temperature_unit;
+      q.wind_speed_unit = params.args.wind_speed_unit;
+      q.precipitation_unit = params.args.precipitation_unit;
+    }
+    if (config.args.forecastDays) {
+      q.forecast_days = Number(params.args.forecast_days);
+      q.past_days = Number(params.args.past_days);
+    }
+    if (config.args.models && params.args.models) {
+      q.models = params.args.models as string;
+    }
+    if (config.args.model) q.models = selectedModel;
+    return q;
+  };
+
+  /** Weighted API calls one location costs (see callWeight). */
+  const locationWeight = (params: RowTransformProcessParams<Record<string, any>>) => (loc: LocationInput): number => {
+    const days = config.args.dateRange
+      ? rangeDays(loc.start, loc.end)
+      : config.args.forecastDays
+        ? Math.max(1, Number(params.args.forecast_days) + Number(params.args.past_days))
+        : 1;
+    return callWeight(variableCount, days);
+  };
+
+  /**
+   * Send the plan's next REQUESTS_PER_REPLY multi-location requests
+   * concurrently and emit their rows as ONE reply, saying "more" while
+   * requests remain. Each location's block is repeated for every input row it
+   * serves (duplicate coordinates), with that row as its parent.
+   */
+  const emitNextReply = async (
+    params: RowTransformProcessParams<Record<string, any>>,
+    plan: WeatherPlan,
+    out: OutputCollector,
+  ): Promise<void> => {
+    const apikey = apiKeyFromParams(params);
+    const selectedModel = config.args.model ? modelSelection(params.args.model) : "provider_default";
+    const base = baseQuery(params, selectedModel);
+
+    const requests: number[] = [];
+    while (requests.length < REQUESTS_PER_REPLY && plan.next < plan.requestEnd.length) requests.push(plan.next++);
+
+    const responses = await mapLimit(requests, REQUESTS_PER_REPLY, async (r) => {
+      const [from, to] = requestRange(plan, r);
+      const q: OmQuery = {
+        ...base,
+        latitude: plan.lat.slice(from, to).join(","),
+        longitude: plan.lon.slice(from, to).join(","),
+      };
+      if (config.args.dateRange) {
+        // Per-location lists, the same length as the coordinates.
+        q.start_date = plan.start.slice(from, to).join(",");
+        q.end_date = plan.end.slice(from, to).join(",");
+      }
+      const resp = await omGetWithMetadata(config.host, config.path, q, { apikey, ttlMs: config.cacheTtlMs });
+      return { from, resp, locations: splitLocations(resp.data, to - from) };
+    });
+
+    const cols: Record<string, any[]> = { time: [] };
+    if (config.block === "daily") cols.date = [];
+    for (const v of config.variables) cols[v.name] = [];
+    for (const f of contextFields(config.name)) cols[f.name] = [];
+    const parentRows: number[] = [];
+
+    for (const { from, resp, locations } of responses) {
+      for (let j = 0; j < locations.length; j++) {
+        const data = locations[j];
+        const block = parseBlock(data?.[config.block], config.variables, isCurrent,
+          config.block === "daily" ? (data?.utc_offset_seconds ?? NaN) : undefined);
+        const context = responseContext(config, { data, retrievedAt: resp.retrievedAt }, selectedModel, block.time);
+        for (const row of rowsOfLocation(plan, from + j)) {
+          appendAll(cols.time, block.time);
+          if (config.block === "daily") appendAll(cols.date, block.date);
+          for (const v of config.variables) appendAll(cols[v.name], block[v.name]);
+          for (const [name, values] of Object.entries(context)) appendAll(cols[name], values);
+          for (let k = 0; k < block.time.length; k++) parentRows.push(row);
+        }
+      }
+    }
+
+    out.emit(
+      batchFromColumns(cols, params.outputSchema),
+      moreOutputMetadata(plan.next < plan.requestEnd.length, parentRowsMetadata(parentRows, parentRows.length)),
+    );
+  };
+
+  const fn = defineRowTransformFunction<Record<string, any>, WeatherPlan>({
     name: config.name,
     description: config.description,
     args,
@@ -466,81 +598,40 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       ...blockFunctionTags(config, outputSchema),
       "vgi.example_queries": exampleQueriesTag(examples),
     },
+    // Bounds the call's plan (the state token over HTTP) and its replies.
+    inputRowsPerCall: WEATHER_ROWS_PER_CALL,
     onBind: () => ({ outputSchema }),
-    process: async (params, batch, out) => {
-      const apikey = apiKeyFromParams(params);
-      const selectedModel = config.args.model ? modelSelection(params.args.model) : "provider_default";
+    initialState: emptyPlan,
+    process: async (params, batch, out, plan) => {
+      // Validate the model up front, so a bad selector fails before any fetch.
+      if (config.args.model) modelSelection(params.args.model);
 
-      // One upstream query per input row. Rows whose coordinates (or required
-      // dates) are NULL are dropped rather than sent — a 1->0 fan-out, which
-      // the provenance array expresses naturally by simply never naming them.
-      const pending: { row: number; q: OmQuery }[] = [];
+      // Rows whose coordinates (or required dates) are NULL are dropped rather
+      // than sent — a 1->0 fan-out, which the provenance array expresses
+      // naturally by simply never naming them.
+      const inputs: (LocationInput | null)[] = [];
       for (let row = 0; row < batch.numRows; row++) {
         const lat = cell(batch, "latitude", row);
         const lon = cell(batch, "longitude", row);
-        if (lat === null || lon === null) continue;
-
-        const q: OmQuery = {
-          latitude: Number(lat),
-          longitude: Number(lon),
-          timeformat: "unixtime",
-          [config.block]: variableList,
-        };
-        if (config.args.timezone) q.timezone = (params.args.timezone as string) || "GMT";
-        if (config.args.units) {
-          q.temperature_unit = params.args.temperature_unit;
-          q.wind_speed_unit = params.args.wind_speed_unit;
-          q.precipitation_unit = params.args.precipitation_unit;
-        }
-        if (config.args.forecastDays) {
-          q.forecast_days = Number(params.args.forecast_days);
-          q.past_days = Number(params.args.past_days);
-        }
+        let start = "";
+        let end = "";
         if (config.args.dateRange) {
-          const start = cell(batch, "start_date", row);
-          const end = cell(batch, "end_date", row);
-          if (start === null || end === null) continue;
-          q.start_date = String(start);
-          q.end_date = String(end);
+          const s = cell(batch, "start_date", row);
+          const e = cell(batch, "end_date", row);
+          if (s !== null && e !== null) {
+            start = String(s);
+            end = String(e);
+          } else {
+            inputs.push(null);
+            continue;
+          }
         }
-        if (config.args.models && params.args.models) {
-          q.models = params.args.models as string;
-        }
-        if (config.args.model) q.models = selectedModel;
-        pending.push({ row, q });
+        inputs.push(lat === null || lon === null ? null : { lat: Number(lat), lon: Number(lon), start, end });
       }
-
-      const responses = await mapLimit(pending, MAX_UPSTREAM_CONCURRENCY, (p) =>
-        omGetWithMetadata(config.host, config.path, p.q, { apikey, ttlMs: config.cacheTtlMs }),
-      );
-
-      // Concatenate every row's block into ONE output batch, recording the
-      // input row each output row came from. Emitting per input row instead
-      // would be wrong: a blended process() emits a single batch.
-      const cols: Record<string, any[]> = { time: [] };
-      if (config.block === "daily") cols.date = [];
-      for (const v of config.variables) cols[v.name] = [];
-      for (const f of contextFields(config.name)) cols[f.name] = [];
-      const parentRows: number[] = [];
-
-      for (let i = 0; i < pending.length; i++) {
-        const data = responses[i].data;
-        const block = parseBlock(data?.[config.block], config.variables, isCurrent,
-          config.block === "daily" ? (data?.utc_offset_seconds ?? NaN) : undefined);
-        appendAll(cols.time, block.time);
-        if (config.block === "daily") appendAll(cols.date, block.date);
-        for (const v of config.variables) appendAll(cols[v.name], block[v.name]);
-        for (const [name, values] of Object.entries(responseContext(config, responses[i], selectedModel, block.time))) {
-          appendAll(cols[name], values);
-        }
-        for (let k = 0; k < block.time.length; k++) parentRows.push(pending[i].row);
-      }
-
-      out.emit(
-        batchFromColumns(cols, params.outputSchema),
-        parentRowsMetadata(parentRows, parentRows.length),
-      );
+      planCall(plan, inputs, locationWeight(params));
+      await emitNextReply(params, plan, out);
     },
+    resume: (params, plan, out) => emitNextReply(params, plan, out),
     examples,
   });
   return withArgConstraints(fn, argConstraints, argDefaults);
@@ -649,6 +740,7 @@ const geocodingBase = defineRowTransformFunction<GeocodingArgs>({
   projectionPushdown: true,
   filterPushdown: true,
   autoApplyFilters: true,
+  inputRowsPerCall: GEOCODING_ROWS_PER_CALL,
   categories: ["weather", "geocoding", "reference"],
   tags: {
     "vgi.example_queries": exampleQueriesTag(GEOCODING_EXAMPLES),
@@ -763,8 +855,8 @@ interface ElevationArgs {
 
 /** Coordinates per /v1/elevation call. The endpoint takes comma-separated
  *  lists and answers with one elevation per point; 100 is its documented cap.
- *  This is why elevation batches where the weather blocks cannot — one call
- *  serves 100 input rows instead of 100 calls. */
+ *  One call serves 100 input rows instead of 100 calls; it is also the
+ *  function's inputRowsPerCall, so one worker call is one upstream request. */
 const ELEVATION_BATCH = 100;
 
 const ELEVATION_EXAMPLES = [
@@ -828,6 +920,9 @@ const elevationBase = defineRowTransformFunction<ElevationArgs>({
     longitude: "Longitude in degrees east (WGS84).",
   },
   projectionPushdown: true,
+  // One call = one /v1/elevation request = one reply, so the extension stores
+  // per-value entries per call (a continued call would store none).
+  inputRowsPerCall: ELEVATION_BATCH,
   categories: ["weather", "reference"],
   tags: {
     "vgi.example_queries": exampleQueriesTag(ELEVATION_EXAMPLES),

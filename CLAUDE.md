@@ -137,9 +137,10 @@ This is DuckDB's rule, not ours: the table-in-out binder evaluates every named
 parameter as a constant, so `timezone := g.timezone` fails with "does not
 support lateral join column parameters". Don't "fix" it with a per-row
 `timezone` — the need it seems to serve, each place bucketed in its own local
-day, is already met by `timezone := 'auto'`, because every row is its own
-upstream request and `'auto'` resolves from that row's coordinates
-(`lateral.test` pins Tokyo 15Z / Reykjavik 0Z in one query). A trailing
+day, is already met by `timezone := 'auto'`, because Open-Meteo resolves `'auto'`
+per location — even inside one multi-location request — from that row's
+coordinates (`lateral.test` and `continuation.test` pin Tokyo 15Z / Reykjavik
+0Z in one query). A trailing
 positional `timezone` overload was built and rejected: the semantic model
 refuses overloaded function names (`ambiguous_function_overload`, and tags are
 entry-level so both overloads look like duplicate entity hosts), overloads go by
@@ -151,25 +152,81 @@ Four things the blended shape forces, all load-bearing in `functions.ts`:
 1. **No finalize.** Map-shaped only — DuckDB forbids `FinalExecute` under
    correlated LATERAL. Everything is emitted from `process()`; there is no
    `out.finish()`.
-2. **One emit per input batch, carrying provenance.** These are 1→N (an hourly
-   forecast is many rows per coordinate), so every emit passes
+2. **One emit per turn, carrying provenance.** A turn — an input batch, or a
+   continuation tick — is answered by exactly one batch. These are 1→N (an
+   hourly forecast is many rows per coordinate), so every emit passes
    `parentRowsMetadata(parentRows, …)` naming the input row behind each output
    row. Omit it and the extension assumes an identity 1→1 map and stamps outer
    columns from the wrong row — `test/sql/lateral.test` pins this by checking
-   that `elevation`'s echoed coordinate matches its outer row.
+   that `elevation`'s echoed coordinate matches its outer row. The weather
+   functions answer one input batch with **several replies** (continued output,
+   vgi ≥ 0.46): `process()` emits the first wrapped in
+   `moreOutputMetadata(true, parentRowsMetadata(…))`, the client sends a
+   zero-row CONTINUE tick, and the framework calls `resume()` for the next, until
+   a reply goes out without "more". Every reply's parent rows index the *last
+   real input*. `resume()` gets no batch, so the function's state
+   (`WeatherPlan`, `src/multi-location.ts`) holds what it needs — the call's
+   distinct locations, the input rows each serves, request boundaries, and the
+   next request — and **never fetched rows**: over HTTP (Cloudflare, `serve.ts`)
+   it rides every turn's state token. It is plain arrays of numbers/strings
+   because the token serializer infers an Arrow schema from it (no `Map`s, no
+   mixed-type arrays).
 3. **`RowTransformConfig` has no `argConstraints` or `cardinality`.** The
    constraints still matter (they're how agents discover valid inputs via
    `vgi_function_arguments()`), so `withArgConstraints()` re-attaches them onto
    the built function's `argumentSpecs` with `constraintSpecFields`. The
    cardinality hints are simply gone — there is no blended equivalent.
-4. **One upstream call per input row.** A LATERAL over a big table is a lot of
-   requests, so calls run through `mapLimit()` at `MAX_UPSTREAM_CONCURRENCY`
-   (8); the `omGet` cache collapses duplicate coordinates within a batch.
-   `elevation` is the exception — `/v1/elevation` takes comma-separated
-   coordinate lists, so it batches 100 points per call. The weather endpoints
-   also accept multi-coordinate queries (returning an array of result objects),
-   which would be the next real optimisation; `parseBlock` assumes a single
-   object today.
+4. **Upstream requests are multi-location; calls are bounded.** Every weather
+   host takes comma-separated `latitude`/`longitude` lists and answers with a
+   JSON array of per-location objects in request order (each but the first has
+   `location_id`; a single coordinate gets a bare object — `splitLocations()`
+   accepts both and throws on a length or `location_id` mismatch rather than
+   misattribute). `planCall()` dedupes a call's rows to distinct locations (the
+   key includes the per-row dates on archive/climate) and packs them, in order,
+   into requests of at most **10 weighted API calls** (`callWeight`: Open-Meteo
+   counts a location as `max(1, vars/10) × max(1, days/14)` calls), **100
+   locations** and ~6 KB of coordinate text. A reply is **4 such requests
+   fetched concurrently** (`REQUESTS_PER_REPLY`); "more" while requests remain.
+   Each location's block is repeated for every input row it serves, so
+   duplicate coordinates still get their own rows.
+
+   Verified live (2026-10): array order = coordinate order on every host
+   (forecast, archive, air-quality, marine, flood, climate, previous-runs,
+   ensemble); `timezone=auto` resolves **per location** inside one request, so
+   `lateral.test`'s Tokyo 15Z / Reykjavik 0Z still holds; archive and climate
+   accept per-location `start_date`/`end_date` lists (ranges of different
+   lengths), so rows with different required dates share a request; one invalid
+   location (lat 95, end < start) fails the whole request with 400 — the query
+   failed before too, when that row's own request did. Size: a 16-day,
+   17-variable hourly forecast is ~34 KB JSON per location (100 locations →
+   3.4 MB in ~3 s; 25 → 0.86 MB in ~1.5 s), which is why the budget is weight,
+   not a location count.
+
+   Why these numbers: multi-location saves round trips, **not quota** —
+   Open-Meteo bills each location, so a reply of up to ~40 weighted calls is
+   already 1/15 of the free tier's 600/minute; bigger replies would only reach
+   the rate limit sooner. Replies of one call are sequential (each waits for a
+   tick), so the concurrency lives inside a reply. On Cloudflare each reply is
+   its own HTTP request, so a turn makes at most 4 subrequests — before, a
+   2048-row chunk was 2048 subrequests in one invocation, past the Workers
+   ceiling.
+
+   **`inputRowsPerCall`** (`input_rows_per_call`, vgi ≥ 0.46) makes the
+   extension's batched-LATERAL operator send each chunk's rows (after its dedup
+   and per-value hits) as calls of at most N rows. Weather: **256**, which
+   bounds the plan in the state token (~40 bytes/location) — the weather output
+   isn't cached, so the call split costs nothing else. `elevation`: **100**
+   (= `ELEVATION_BATCH`), so a call is one `/v1/elevation` request and one
+   reply. `geocoding`: **8** (= `MAX_UPSTREAM_CONCURRENCY`), one concurrent wave
+   of searches per call and one reply; per-value entries are then stored every
+   8 names, and a turn makes ≤ 8 subrequests on Cloudflare. Neither elevation
+   nor geocoding continues its output — **the extension stores no per-value
+   entries for a call whose output continued** — so for a per-value-cached
+   function, split with `inputRowsPerCall`, never with continuation.
+
+   A LIMIT under batched LATERAL stops only *between chunks* (DuckDB drains a
+   whole chunk under the delim join), so every reply of the current chunk's
+   calls is still fetched; on a literal call one reply is all there is.
 
 NULL coordinates (or NULL required dates) are dropped rather than sent — a 1→0
 fan-out, which provenance expresses by never naming that input row.
@@ -221,6 +278,11 @@ per-member dynamic columns that don't fit a static Arrow schema.
 - `src/weather.ts` — `parseBlock()` zips a response block into name-keyed
   column arrays: parallel arrays for hourly/daily, scalars (one row) for
   `current`. See "Timestamps".
+- `src/multi-location.ts` — the weather functions' multi-location planning:
+  `planCall()` (dedup + pack a call's locations into weighted requests),
+  `splitLocations()` (array/object response → per-location results, order
+  checked), `callWeight()`, and the `WeatherPlan` continuation state. Pure, no
+  vgi import; unit-tested in `test/unit/multi-location.test.ts`.
 - `src/provenance.ts` — explicit provenance/interval columns shared by physical
   schemas and semantic dimensions; parses provider context without inventing
   model run times. `retrieved_at` comes from `omGetWithMetadata()` and survives
@@ -357,10 +419,26 @@ which is every call shape these blended functions have. The extension latches
 the advertisement from an exchange's first output, so re-emitting it per batch
 is harmless.
 
+Per-value entries are stored **per call** — and only for a call whose output did
+**not** continue (continued output is never cached: not per value, and not as a
+whole chunk). That is why both cached functions split their work with
+`inputRowsPerCall` (geocoding 8, elevation 100) and answer each call in exactly
+one reply, while the uncached weather functions are the ones that continue.
+`cache.test` pins it: ten names go out as calls of 8 and 2, 101 points as calls
+of 100 and 1, and the repeat of each makes no worker call at all.
+
+**The suite is rate-limit sensitive.** It runs against the live free tier
+(600 weighted calls/minute per IP, and elevation counts every coordinate), so
+running `test-stdio` and `test-http` back to back from one host can trip
+HTTP 429. Every file sets `set ignore_error_messages` (empty), so a 429 —
+like any transport error — fails the file instead of being silently skipped
+(the sqllogictest runner's default skips errors that mention `HTTP`); rerun it
+a minute later.
+
 The two are not equally worth it. `geocoding` is one upstream call per distinct
 name against a 600-calls/minute tier, so the memo is a large win; `elevation`
-already batches 100 coordinates per call, so `perValue` mostly buys the *repeat*
-query rather than within-batch dedup — kept because a DEM value is immutable and
+already batches 100 coordinates per call (one call = one request), so
+`perValue` mostly buys the *repeat* query rather than within-batch dedup — kept because a DEM value is immutable and
 the memo is therefore always safe.
 
 The memo key is not just the input tuple: the extension folds
@@ -384,8 +462,11 @@ GeoNames is static, which is why its host serves no `meta.json`. See the
 
 **Worker-side `omGet` cache** (`open-meteo.ts`) is the weaker layer: an
 unbounded `Map` keyed by resolved URL, per process — so it dies with the process
-and is per-isolate on Cloudflare. It still collapses duplicate coordinates
-within a batch before the client cache is populated. Note Open-Meteo returns
+and is per-isolate on Cloudflare. A weather request's URL is the whole
+multi-location group, so it hits only when the same group repeats (a re-run of
+the same query, or a LIMIT'd chunk); duplicate coordinates *within* a call are
+collapsed before any request by `planCall()` (and, under batched LATERAL,
+already by the extension's input dedup). Note Open-Meteo returns
 **no** `Cache-Control`/`ETag`/`Expires` on any endpoint, so every TTL here is
 hand-calibrated, not negotiated.
 
@@ -406,6 +487,13 @@ Worker.
   hits for `geocoding` and `elevation`, memo serves match upstream, `count`
   scoping isn't bypassed, and a memoized `elevation` still lands on the right
   outer row.
+- `continuation.test` — multi-location requests answered as continued output:
+  40 points in one call need more than one reply (counted with the
+  `table_in_out.continue` / `table_in_out.write_input` events in
+  `duckdb_logs`), row-for-row equivalence with `SET vgi_batch_lateral = false`
+  (one single-location request per row), per-location `timezone := 'auto'`,
+  per-row archive dates in one request, and LIMIT. Needs an extension with
+  continuation (vgi 2.2 protocol); `threads = 1` keeps the call count exact.
 - `lateral.test` — the blended call shapes: column args, `LATERAL`, comma join,
   the one-query geocode→forecast bridge, NULL coordinates as 1→0, and
   per-output-row provenance (asserted via `elevation` echoing its input
