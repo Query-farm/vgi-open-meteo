@@ -96,9 +96,13 @@ query](#place-names--weather-in-one-query).
 
 `latitude`/`longitude` are **required positional** arguments; everything else is
 a **named** optional argument (`timezone`, `forecast_days`, `past_days`,
-`temperature_unit`, `wind_speed_unit`, `precipitation_unit`, `start_date`,
-`end_date`, `models`). Timestamps always come back in **UTC**; a `timezone`
-argument only controls how *daily* aggregates are bucketed.
+`temperature_unit`, `wind_speed_unit`, `precipitation_unit`, `model`). Specialist
+functions retain their `models` argument. Historical
+and climate functions also require positional `start_date` and `end_date`.
+Timestamps always come back in **UTC**; a `timezone`
+argument controls the requested time window and daily boundaries. Daily functions
+default to the location’s timezone (`auto`) where supported and also return a
+calendar `date`; other functions default to GMT.
 
 ## Functions
 
@@ -190,16 +194,18 @@ row is its own request, so `'auto'` is resolved from that row's coordinates and
 each city gets its own zone, even though the argument is a single constant:
 
 ```sql
-SELECT p.city, d.time, d.temperature_2m_max, d.temperature_2m_min
+SELECT p.city, d.date, d.temperature_2m_max, d.temperature_2m_min
 FROM (VALUES ('Berlin'), ('Tokyo'), ('Glen Allen')) AS p(city),
      LATERAL m.main.geocoding(p.city, count := 1) AS g,
      LATERAL m.main.forecast_daily(g.latitude, g.longitude, timezone := 'auto') AS d
-ORDER BY p.city, d.time;
+ORDER BY p.city, d.date;
 ```
 
 Named arguments are constants, so `timezone := g.timezone` is rejected by
 DuckDB ("does not support lateral join column parameters") — `'auto'` is the
 way to get a per-location zone. The returned instants are UTC either way.
+Open-Meteo uses one fixed UTC offset within a response, so daily intervals that
+cross a daylight-saving transition can differ from civil midnight-to-midnight days.
 
 ## Units and options
 
@@ -217,34 +223,201 @@ SELECT * FROM m.main.historical_daily(52.52, 13.41, '2024-06-01', '2024-06-07');
 
 ## Semantic model
 
-The catalog publishes the stable identity `farm.query.open_meteo`. Each table
-function is a semantic entity whose physical output members, measures, source
-arguments, and units are carried in DuckDB tags. Repeated weather and ensemble
-members use `vgi.semantic_members` templates; consumers expand those templates
-before validation and compilation.
+The catalog identity is `farm.query.open_meteo`. Every output field from a
+modeled function is selectable using its SQL name, such as `temperature_2m`,
+`relative_humidity_2m`, `rain` or `wind_direction_10m`. Readable titles explain
+those names. Each field has an explicit definition and applicable units;
+only useful, deliberately chosen aggregates become measures. Adding an output
+column requires a reviewed definition and a field-coverage test.
 
-Function inputs are also selectable parameter-backed dimensions. For example,
-`requested_latitude`, `requested_longitude`, `requested_forecast_days`, and
-`requested_models` preserve the invocation context even though Open-Meteo does
-not repeat those values in every response row. In a correlated multi-location
-query, latitude and longitude therefore resolve from each driving input row,
-not from a single scalar default.
+| Entity | Use it for |
+| --- | --- |
+| `geocoding` | Resolve and disambiguate a place; feed its coordinates into weather |
+| `forecast_current` | All current fields, including precipitation, pressure, cloud cover and gusts |
+| `forecast_hourly` / `historical_hourly` | Hourly values including dew point; forecast precipitation probability; temperature extremes and precipitation totals |
+| `forecast_daily` / `historical_daily` | Daily fields including sunrise/sunset and solar energy; period totals and extremes |
+| `air_quality_current` / `air_quality_hourly` | All returned pollutants, dust, UV and AQI; peak forecast AQI and mean PM2.5 |
+| `weather_codes` | Readable `description` and `emoji`, linked from weather entities |
+| `elevation` | Terrain height at a coordinate |
 
-Output units are metadata rather than extra SQL columns. Static values such as
-`%`, `hPa`, `m`, and `m3/s` are attached directly. Temperature, wind-speed, and
-precipitation members use `unit_parameter`, so semantic compilation reports the
-unit selected by `temperature_unit`, `wind_speed_unit`, or
-`precipitation_unit`. UCUM spellings are used where practical; no unit ontology
-is required by the contract.
+Marine, flood, climate, ensemble and previous-run functions remain available
+through SQL with their full schemas and examples. They are outside this curated
+semantic model. Request options remain parameters; requested latitude/longitude
+and response provenance remain selectable context. Forecast and historical
+functions accept one `model` selector in SQL and in semantic parameters, with
+`best_match` as the default. For historical analysis across decades, an explicit
+`model := 'era5'` selects a consistent reanalysis product. Model lists are rejected
+because their suffixed output columns do not fit these functions' fixed schemas.
 
-Weather entities also publish explicit conformance groups for UTC valid time,
-requested latitude/longitude, and WMO weather code. A multi-fact request can
-use `branch_members` to align these equivalent members across compatible
-functions; the compiler never guesses equivalence from matching names. The
-generated model includes reusable filtered measures where the source exposes
-the required member: `daylight_period_count` owns `is_day = true`, and
-`wet_period_count` owns `precipitation > 0`. Those predicates are compiled as
-parameters and remain separate from source-access safety filters.
+**Daily questions use `date`.** Daily functions return a SQL `DATE` alongside
+the UTC `time` instant and default to `timezone := 'auto'` where supported. The
+date labels the provider's daily interval in the requested zone, so Tokyo's
+January 1 is January 1 even though its interval starts on December 31 in UTC.
+Select `date` for one result per provider day, or omit it for a period summary.
+It is a calendar dimension, with no implicit UTC time rollup. An explicit
+`timezone := 'GMT'` requests UTC days. Hourly semantic time rollups use UTC;
+choose the daily entity for provider daily summaries. The provider holds one
+UTC offset throughout a response, so these intervals do not follow DST changes
+within that response. Hourly precipitation timestamps label the preceding hour;
+grouping labels by UTC date does not redistribute amounts by interval overlap.
+
+Measures describe the operation: `total_precipitation` sums amounts,
+`highest_temperature` takes a maximum, `lowest_temperature` takes a minimum,
+and `total_precipitation_hours` sums the provider's wet-hour counts, rather than
+an exact duration of rainfall. `days_with_precipitation` counts days with a
+reported amount greater than zero; it is not a threshold-based climate index.
+Daily highs and lows are not averaged
+into a supposed mean temperature. Current snapshots have values, not period
+measures. Peak AQI is a maximum of supplied hourly index values, not a newly
+computed regulatory daily index.
+
+For example, pass this request to a semantic query consumer for Tokyo's next
+seven provider days as a single period summary:
+
+```json
+{
+  "measures": [
+    {"catalog_id": "farm.query.open_meteo", "entity_id": "forecast_daily", "member_id": "total_precipitation"},
+    {"catalog_id": "farm.query.open_meteo", "entity_id": "forecast_daily", "member_id": "highest_temperature"}
+  ],
+  "parameters": {"latitude": 35.69, "longitude": 139.69, "forecast_days": 7}
+}
+```
+
+Units follow the request's temperature, wind and precipitation options. In metric
+mode, precipitation is water equivalent in **mm**, while snowfall is new snow
+depth in **cm**; both use inches in imperial mode. Snow depth must not be added
+to total precipitation. Hourly solar irradiance uses **W/m²** and daily solar
+energy uses **MJ/m²**. Coverage counts are dimensionless; wet-hour totals use hours.
+
+Aggregates exclude missing values; an entirely missing precipitation period
+returns NULL, not zero. Coverage is specific to each variable:
+`precipitation_days_with_data`, `temperature_days_with_data` (both high and low),
+`precipitation_hours_with_data`, `temperature_hours_with_data` and
+`pm2_5_hours_with_data`. Counts describe supplied samples, including any
+interpolation, rather than observational independence or accuracy.
+
+**An existing points table can drive weather directly.** Register it as a
+semantic entity with a stable site identifier as its grain, plus latitude and
+longitude members. Bind those members to the weather function's arguments.
+For example, with a modeled `example.locations.points` entity:
+
+```json
+{
+  "measures": [
+    {"catalog_id": "farm.query.open_meteo", "entity_id": "forecast_daily", "member_id": "total_precipitation"}
+  ],
+  "source_bindings": [{
+    "entity": {"catalog_id": "farm.query.open_meteo", "entity_id": "forecast_daily"},
+    "driver": {"entity": {"catalog_id": "example.locations", "entity_id": "points"}, "max_rows": 100},
+    "arguments": {
+      "latitude": {"member": {"catalog_id": "example.locations", "entity_id": "points", "member_id": "latitude"}},
+      "longitude": {"member": {"catalog_id": "example.locations", "entity_id": "points", "member_id": "longitude"}}
+    }
+  }],
+  "parameters": {"forecast_days": 7}
+}
+```
+
+The compiler retains each site's identity, including distinct sites sharing
+coordinates. These precipitation totals accumulate time at each site; adding
+them across sites does not give regional precipitation. Rows with missing
+coordinates produce no weather rows and are omitted by semantic source bindings.
+To retain those sites, use SQL `LEFT JOIN LATERAL ... ON true`; see the executable
+points-table example in [test/semantic/queries.py](test/semantic/queries.py).
+
+Optional to-one relationships to `weather_codes` provide readable conditions
+without dropping rows with an unknown code. Hourly entities explicitly conform
+UTC hour and requested coordinates for weather/air-quality comparisons. Daily
+dates are not declared equivalent to UTC hours.
+
+**Forecast interpretation.** `forecast_hourly.dew_point_2m` is a temperature at
+the valid time and follows the temperature-unit option.
+`precipitation_probability` is a percentage for the preceding hour, using the
+provider's nominal 0.1 mm/hour precipitation threshold. It stays a percentage
+with imperial units. Source calculations and interpolation can use coarser
+intervals. `maximum_hourly_precipitation_probability` returns the largest
+hourly probability, not the chance of precipitation during the whole period.
+Hourly events are not independent, so summing probabilities or multiplying
+their complements does not give a valid period probability.
+
+**Provenance travels with the values.** Every modeled weather/air-quality row
+includes `model_selection`, `source_endpoint`, `retrieved_at`, `grid_latitude`,
+`grid_longitude`, `location_elevation`, `response_timezone` and
+`utc_offset_seconds`. For example:
+
+```sql
+SELECT time, dew_point_2m, precipitation_probability,
+       model_selection, grid_latitude, grid_longitude, retrieved_at
+FROM m.main.forecast_hourly(52.52, 13.41, model := 'gfs_global', forecast_days := 1)
+ORDER BY time;
+```
+
+The model selector records what was requested. Blended or derived fields can
+use auxiliary sources; it does not prove the source model of every value.
+Returned grid coordinates may differ from requested site coordinates, and
+`location_elevation` is the provider's target/downscaling elevation, not
+necessarily raw grid elevation. Missing provider metadata stays NULL.
+`retrieved_at` records completed upstream retrieval and is preserved on worker
+cache hits. It is not forecast issue time or a guarantee of data freshness.
+
+Regular responses do not supply a unique model initialization, issue time or
+lead time. The `open_meteo.provenance` function tag makes these omissions
+machine-readable. Open-Meteo's [model-update metadata](https://open-meteo.com/en/docs/model-updates#metadata-api-documentation)
+cannot reliably identify the run behind those responses. Analyses requiring an
+explicit initialization must use a run-specific data source such as the
+[Single Runs API](https://open-meteo.com/en/docs/single-runs-api#data-sources).
+
+**Reporting intervals are explicit.** Forecast and historical rows expose
+`interval_start`, `interval_end` and `interval_seconds`. These describe nominal
+aggregation windows; the metadata below identifies which fields use them.
+Hourly accumulation windows end at `time`, provider days start at `time`, and
+current accumulation windows use the provider's returned duration. If that
+current duration is missing, its bounds stay NULL.
+
+The versioned `open_meteo.temporal` function tag maps each weather variable to
+one of five support types. Instantaneous readings do not inherit a row's
+accumulation window, and source-dependent fields have no asserted common bounds.
+
+| Support | Meaning |
+| --- | --- |
+| `instant` | Value at its `time_member`, normally `time` |
+| `preceding_interval` | Amount, mean, maximum or probability over the interval ending at `time` |
+| `provider_day` | Summary over the provider's fixed-offset daily interval |
+| `event_time` | Event timestamp such as `sunrise` or `sunset` |
+| `source_dependent` | Temporal support varies by source, interpolation or pollutant |
+
+For example, hourly precipitation has `statistic: "sum"`,
+`duration_seconds: 3600`, `start_member: "interval_start"` and
+`end_member: "interval_end"`. Current precipitation uses
+`duration_member: "interval_seconds"`. The probability threshold is explicitly
+nominal; metadata does not assert a universal exact threshold comparison.
+
+```sql
+SELECT tags['open_meteo.temporal'], tags['open_meteo.provenance']
+FROM duckdb_functions()
+WHERE database_name = 'm' AND function_name = 'forecast_hourly';
+```
+
+These are worker-specific tags alongside standard VGI semantic members. The
+current semantic compiler does not enforce interval-aware aggregation from
+these tags; consumers must inspect them. The interval and provenance columns
+are ordinary selectable semantic dimensions.
+
+Definitions follow Open-Meteo's [forecast variables](https://open-meteo.com/en/docs#hourly-parameter-definition),
+[historical variables and sources](https://open-meteo.com/en/docs/historical-weather-api#hourly-parameter-definition)
+and [air-quality variables](https://open-meteo.com/en/docs/air-quality-api#hourly-parameter-definition).
+Forecast `rain` excludes separately modeled showers; archive `rain` includes
+them. Current weather normally uses 15-minute data that may be interpolated, whereas
+current air quality uses hourly data. Historical weather contains modeled
+estimates from potentially different products, rather than station observations
+or a guaranteed homogeneous climate-trend series.
+
+The metadata is carried in DuckDB's `vgi.semantic_*` tags. See
+[src/semantic.ts](src/semantic.ts) for definitions and
+[test/semantic/queries.py](test/semantic/queries.py) for executable examples.
+Run `make test-semantic` with a local `vgi-lint-check` checkout to test the real
+worker and reference compiler against deterministic weather fixtures.
 
 ## Commercial API key (optional)
 

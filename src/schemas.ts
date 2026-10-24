@@ -18,11 +18,13 @@
 // identically on Bun.
 import {
   bool,
+  dateDay,
   field as makeField,
   float64,
   int32,
   int64,
   isBool,
+  isDate,
   isFloat,
   isInt,
   isList,
@@ -39,6 +41,7 @@ import {
 } from "vgi/worker-cf";
 
 import type { EndpointConfig, WeatherVar } from "./endpoints.js";
+import { contextFields } from "./provenance.js";
 
 const tsUtcMicros = (): VgiDataType => timestamp(TimeUnit.MICROSECOND, "UTC");
 
@@ -60,6 +63,7 @@ function sqlTypeName(type: VgiDataType): string {
   if (isFloat(type)) return "DOUBLE";
   if (isInt(type)) return (type as { bitWidth?: number }).bitWidth === 64 ? "BIGINT" : "INTEGER";
   if (isBool(type)) return "BOOLEAN";
+  if (isDate(type)) return "DATE";
   if (isUtf8(type)) return "VARCHAR";
   if (isTimestamp(type)) return "TIMESTAMP WITH TIME ZONE";
   if (isList(type)) return "VARCHAR[]";
@@ -97,8 +101,8 @@ function arrowType(v: WeatherVar): VgiDataType {
 }
 
 /**
- * Schema for a block function: a UTC `time` column followed by one column per
- * variable. `current` blocks emit a single row; hourly/daily one row per step.
+ * A UTC `time`, a calendar `date` for daily blocks, and the weather values.
+ * `current` blocks emit a single row; hourly/daily one row per step.
  */
 export function blockSchema(config: EndpointConfig): VgiSchema {
   const timeComment =
@@ -109,12 +113,20 @@ export function blockSchema(config: EndpointConfig): VgiSchema {
         : "Timestamp of this hourly step (UTC).";
 
   const fields: VgiField[] = [field("time", tsUtcMicros(), timeComment, false)];
+  if (config.block === "daily") {
+    fields.push(field("date", dateDay(), "Provider's daily date label in the requested timezone (auto by default where supported). Uses the response's fixed UTC offset; DST transitions within a response are not applied."));
+  }
   for (const v of config.variables) {
     const comment =
       config.variables.length > 20
         ? "Open-Meteo value; units follow request options."
         : `Open-Meteo "${v.name}" value; units per request options.`;
     fields.push(field(v.name, arrowType(v), comment));
+  }
+  for (const f of contextFields(config.name)) {
+    const type = f.type === "VARCHAR" ? utf8() : f.type === "INTEGER" ? int32()
+      : f.type === "DOUBLE" ? float64() : tsUtcMicros();
+    fields.push(field(f.name, type, f.description));
   }
   return schema(fields);
 }

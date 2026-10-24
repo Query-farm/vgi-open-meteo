@@ -97,16 +97,35 @@ tasks:
       FROM open_meteo.main.previous_runs_hourly(52.52, 13.41, forecast_days := 1)
       ORDER BY time
 
-  - name: multi_location_average_temperature
+  - name: multi_location_period_summary
     reference_sql: >-
-      SELECT c.location_id, f.time, avg(f.temperature_2m) AS average_temperature_2m
+      SELECT c.location_id, sum(f.precipitation_sum) AS total_precipitation,
+             max(f.temperature_2m_max) AS highest_temperature,
+             min(f.temperature_2m_min) AS lowest_temperature
       FROM (VALUES ('berlin', 52.52, 13.41), ('tokyo', 35.69, 139.69))
            AS c(location_id, latitude, longitude),
-           LATERAL open_meteo.main.forecast_hourly(
-             c.latitude, c.longitude, forecast_days := 1
+           LATERAL open_meteo.main.forecast_daily(
+             c.latitude, c.longitude, forecast_days := 7
            ) AS f
-      GROUP BY c.location_id, f.time
-      ORDER BY c.location_id, f.time
+      GROUP BY c.location_id
+      ORDER BY c.location_id
+    required_tools: [query_semantic_model]
+
+  - name: tokyo_daily_conditions
+    reference_sql: >-
+      SELECT g.name, f.date, f.temperature_2m_max,
+             open_meteo.main.weather_code_text(f.weather_code) AS conditions
+      FROM open_meteo.main.geocoding('Tokyo', count := 1) AS g,
+           LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, forecast_days := 3) AS f
+      ORDER BY f.date
+    required_tools: [query_semantic_model]
+
+  - name: berlin_historical_rain_hours
+    reference_sql: >-
+      SELECT sum(precipitation_sum) AS total_precipitation,
+             sum(precipitation_hours) AS total_precipitation_hours,
+             count(precipitation_sum) AS precipitation_days_with_data
+      FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-06-01', '2024-06-07')
     required_tools: [query_semantic_model]
 
   - name: scheveningen_marine_by_name

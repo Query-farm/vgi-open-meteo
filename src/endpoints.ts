@@ -26,10 +26,12 @@ export interface EndpointArgs {
   forecastDays?: boolean;
   /** start_date + end_date — required positional args (archive / climate). */
   dateRange?: boolean;
-  /** timezone (defaults to GMT). */
+  /** timezone (defaults to auto for daily blocks, GMT otherwise). */
   timezone?: boolean;
   /** temperature_unit / wind_speed_unit / precipitation_unit. */
   units?: boolean;
+  /** One forecast/archive model selection, preserving a fixed output schema. */
+  model?: boolean;
   /** models (comma-separated). */
   models?: boolean;
 }
@@ -80,8 +82,10 @@ const DAY = 24 * HOUR;
 const FORECAST_HOURLY: WeatherVar[] = [
   d("temperature_2m"),
   d("relative_humidity_2m"),
+  d("dew_point_2m"),
   d("apparent_temperature"),
   d("precipitation"),
+  d("precipitation_probability"),
   d("rain"),
   d("snowfall"),
   i("weather_code"),
@@ -95,7 +99,7 @@ const FORECAST_HOURLY: WeatherVar[] = [
   b("is_day"),
 ];
 
-// Archive (ERA5) exposes a narrower hourly variable set than the forecast API
+// The archive API exposes a narrower hourly variable set than the forecast API
 // — notably no visibility / uv_index / is_day — and 400s on unknown variables.
 const ARCHIVE_HOURLY: WeatherVar[] = [
   d("temperature_2m"),
@@ -250,7 +254,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     path: "/v1/forecast",
     block: "hourly",
     variables: FORECAST_HOURLY,
-    args: { forecastDays: true, timezone: true, units: true, models: true },
+    args: { forecastDays: true, timezone: true, units: true, model: true },
     categories: ["weather", "forecast"],
     category: "forecast",
     cacheTtlMs: 10 * MIN,
@@ -263,7 +267,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     path: "/v1/forecast",
     block: "daily",
     variables: DAILY,
-    args: { forecastDays: true, timezone: true, units: true, models: true },
+    args: { forecastDays: true, timezone: true, units: true, model: true },
     categories: ["weather", "forecast"],
     category: "forecast",
     cacheTtlMs: 10 * MIN,
@@ -276,7 +280,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     path: "/v1/forecast",
     block: "current",
     variables: CURRENT,
-    args: { timezone: true, units: true },
+    args: { timezone: true, units: true, model: true },
     categories: ["weather", "realtime"],
     category: "forecast",
     cacheTtlMs: 5 * MIN,
@@ -288,7 +292,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     path: "/v1/archive",
     block: "hourly",
     variables: ARCHIVE_HOURLY,
-    args: { dateRange: true, timezone: true, units: true },
+    args: { dateRange: true, timezone: true, units: true, model: true },
     categories: ["weather", "historical"],
     category: "historical",
     cacheTtlMs: DAY,
@@ -300,7 +304,7 @@ export const ENDPOINTS: EndpointConfig[] = [
     path: "/v1/archive",
     block: "daily",
     variables: DAILY,
-    args: { dateRange: true, timezone: true, units: true },
+    args: { dateRange: true, timezone: true, units: true, model: true },
     categories: ["weather", "historical"],
     category: "historical",
     cacheTtlMs: DAY,

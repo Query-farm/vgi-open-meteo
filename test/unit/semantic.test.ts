@@ -1,168 +1,107 @@
 import { describe, expect, test } from "bun:test";
-
 import { ENDPOINTS } from "../../src/endpoints.js";
-import {
-  GEOCODING_SEMANTIC_TAGS,
-  weatherSemanticTags,
-} from "../../src/semantic.js";
+import { blockSchema, resultColumnsSchema, GEOCODING_SCHEMA, ELEVATION_SCHEMA } from "../../src/schemas.js";
+import { weatherSemanticTags, GEOCODING_SEMANTIC_TAGS, ELEVATION_SEMANTIC_TAGS, WEATHER_CODES_SEMANTIC_TAGS } from "../../src/semantic.js";
+import { parseBlock } from "../../src/weather.js";
 
 type Member = Record<string, any>;
-
-function packed(tags: Record<string, string>): Member[] {
-  return JSON.parse(tags["vgi.semantic_members"]);
+function members(name: string): Member[] {
+  return JSON.parse(weatherSemanticTags(name)["vgi.semantic_members"]);
 }
 
-function expanded(tags: Record<string, string>): Member[] {
-  return packed(tags).flatMap((item) =>
-    item.template_id
-      ? item.members.map((member: Member) => ({ ...item.template, ...member }))
-      : [item],
-  );
-}
-
-function weather(name: string): Record<string, string> {
-  return weatherSemanticTags(
-    ENDPOINTS.find((endpoint) => endpoint.name === name)!,
-  );
-}
-
-describe("Open-Meteo semantic metadata", () => {
-  test("exposes function arguments as selectable invocation context", () => {
-    const byId = new Map(
-      expanded(weather("forecast_hourly")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(byId.get("requested_latitude")).toMatchObject({
-      kind: "dimension",
-      conformance_id:
-        "farm.query.open_meteo.invocation.requested_latitude",
-      source_argument: "latitude",
-      data_type: "DOUBLE",
-      unit: "deg",
-    });
-    expect(byId.get("requested_forecast_days")).toMatchObject({
-      source_argument: "forecast_days",
-      unit: "d",
-    });
-    expect(byId.get("requested_models")?.source_argument).toBe("models");
-    expect(byId.get("time")?.conformance_id).toBe(
-      "farm.query.open_meteo.weather.valid_time",
-    );
-    expect(byId.get("weather_code")?.conformance_id).toBe(
-      "farm.query.open_meteo.wmo.weather_code",
-    );
+describe("curated weather model", () => {
+  test("specialist and new endpoints do not automatically become semantic entities", () => {
+    for (const name of ["ensemble_hourly", "ensemble_daily", "previous_runs_hourly", "climate_daily", "marine_hourly", "marine_daily", "flood_daily", "future_endpoint"]) {
+      expect(weatherSemanticTags(name)).toEqual({});
+    }
   });
 
-  test("publishes reusable filtered weather measures", () => {
-    const byId = new Map(
-      expanded(weather("forecast_hourly")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(byId.get("daylight_period_count")).toMatchObject({
-      aggregation: "count_rows",
-      filter: { member: "is_day", operator: "eq", value: true },
-      additivity: "additive",
-      unit: "1",
-    });
-    expect(byId.get("wet_period_count")).toMatchObject({
-      aggregation: "count_rows",
-      filter: { member: "precipitation", operator: "gt", value: 0 },
-      additivity: "additive",
-      unit: "1",
-    });
+  test("every returned field is selectable with its original name, type and a readable title", () => {
+    const sources = [
+      ...ENDPOINTS.filter(e => weatherSemanticTags(e.name)["vgi.semantic_entity"])
+        .map(e => ({ tags: weatherSemanticTags(e.name), schema: blockSchema(e) })),
+      { tags: GEOCODING_SEMANTIC_TAGS, schema: GEOCODING_SCHEMA },
+      { tags: ELEVATION_SEMANTIC_TAGS, schema: ELEVATION_SCHEMA },
+    ];
+    for (const { tags, schema } of sources) {
+      const fields = new Map(JSON.parse(resultColumnsSchema(schema)).map((f: any) => [f.name, f.type]));
+      const selected: Member[] = JSON.parse(tags["vgi.semantic_members"]);
+      const byId = new Map(selected.map(m => [m.member_id, m]));
+      expect(byId.size).toBe(selected.length);
+      const visible = selected.filter(m => m.column && !m.hidden);
+      expect(visible.map(m => m.column).sort()).toEqual([...fields.keys()].sort());
+      for (const m of visible) expect(m.member_id).toBe(m.column);
+      const checkFilter = (filter: any): void => {
+        if (filter.and) filter.and.forEach(checkFilter);
+        else expect(byId.get(filter.member)?.kind).toBe("dimension");
+      };
+      for (const m of selected) {
+        expect(m.title.length).toBeGreaterThan(0);
+        expect(m.description.length).toBeGreaterThan(0);
+        if (m.column) expect(fields.get(m.column)).toBe(m.data_type);
+        if (m.member) expect(byId.get(m.member)?.kind).toBe("dimension");
+        if (m.filter) checkFilter(m.filter);
+        expect(m.template_id).toBeUndefined();
+      }
+    }
+    expect(JSON.parse(WEATHER_CODES_SEMANTIC_TAGS["vgi.semantic_members"]).map((m: Member) => m.member_id))
+      .toEqual(["code", "description", "emoji"]);
   });
 
-  test("declares default and requested physical units through function arguments", () => {
-    const byId = new Map(
-      expanded(weather("forecast_hourly")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(byId.get("temperature_2m")?.unit_parameter).toEqual({
-      argument: "temperature_unit",
-      values: { celsius: "Cel", fahrenheit: "[degF]" },
-    });
-    expect(byId.get("wind_speed_10m")?.unit_parameter.values).toEqual({
-      kmh: "km/h",
-      ms: "m/s",
-      mph: "[mi_i]/h",
-      kn: "[kn_i]",
-    });
-    expect(byId.get("precipitation")?.unit_parameter.values).toEqual({
-      mm: "mm",
-      inch: "[in_i]",
-    });
-    expect(byId.get("snowfall")?.unit_parameter.values.mm).toBe("cm");
-    expect(byId.get("relative_humidity_2m")?.unit).toBe("%");
-    expect(byId.get("pressure_msl")?.unit).toBe("hPa");
-    expect(byId.get("row_count")?.unit).toBe("1");
+  test("period summaries use sums and extremes, with duration independent of precipitation units", () => {
+    for (const name of ["forecast_daily", "historical_daily"]) {
+      const byId = new Map(members(name).map(m => [m.member_id, m]));
+      expect(byId.get("total_precipitation")).toMatchObject({ aggregation: "sum", member: "precipitation_sum" });
+      expect(byId.get("highest_temperature")).toMatchObject({ aggregation: "max", member: "temperature_2m_max" });
+      expect(byId.get("lowest_temperature")).toMatchObject({ aggregation: "min", member: "temperature_2m_min" });
+      expect(byId.get("precipitation_hours")?.unit).toBe("h");
+      expect(byId.get("precipitation_hours")?.unit_parameter).toBeUndefined();
+      expect(byId.get("date")).toMatchObject({ kind: "dimension", data_type: "DATE" });
+      // A local daily interval must not silently acquire UTC calendar rollups.
+      expect(JSON.parse(weatherSemanticTags(name)["vgi.semantic_entity"]).default_time_dimension).toBeUndefined();
+    }
   });
 
-  test("uses static units where the worker does not expose unit controls", () => {
-    const air = new Map(
-      expanded(weather("air_quality_hourly")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(air.get("pm2_5")?.unit).toBe("ug/m3");
-    expect(air.get("us_aqi")?.unit).toBe("1");
-
-    const marine = new Map(
-      expanded(weather("marine_hourly")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(marine.get("wave_height")?.unit).toBe("m");
-    expect(marine.get("wave_period")?.unit).toBe("s");
-
-    const flood = new Map(
-      expanded(weather("flood_daily")).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(flood.get("river_discharge")?.unit).toBe("m3/s");
+  test("snow depth, water equivalent, irradiance and energy keep distinct units", () => {
+    const hourly = new Map(members("historical_hourly").map(m => [m.member_id, m]));
+    const daily = new Map(members("historical_daily").map(m => [m.member_id, m]));
+    expect(hourly.get("snowfall")?.unit_parameter.values).toEqual({ mm: "cm", inch: "[in_i]" });
+    expect(daily.get("snowfall_sum")?.unit_parameter.values).toEqual({ mm: "cm", inch: "[in_i]" });
+    expect(hourly.get("precipitation")?.unit_parameter.values).toEqual({ mm: "mm", inch: "[in_i]" });
+    expect(hourly.get("shortwave_radiation")?.unit).toBe("W/m2");
+    expect(daily.get("shortwave_radiation_sum")?.unit).toBe("MJ/m2");
   });
 
-  test("packs repeated dimensions and measures as member templates", () => {
-    const entries = packed(weather("ensemble_hourly"));
-    expect(
-      entries.find((entry) => entry.template_id === "weather_dimensions"),
-    ).toMatchObject({
-      template: { kind: "dimension" },
-      members: expect.arrayContaining([
-        expect.objectContaining({ member_id: "temperature_2m_member30" }),
-      ]),
-    });
-    expect(
-      entries.find((entry) => entry.template_id === "average_measures"),
-    ).toMatchObject({
-      template: {
-        kind: "measure",
-        aggregation: "avg",
-        additivity: "non_additive",
-      },
-    });
+  test("categorical values, directions and solar times are never arithmetic measures", () => {
+    for (const endpoint of ENDPOINTS) {
+      if (!weatherSemanticTags(endpoint.name)["vgi.semantic_members"]) continue;
+      for (const m of members(endpoint.name).filter(m => m.kind === "measure")) {
+        expect(["weather_code", "is_day", "wind_direction_10m", "wind_direction_10m_dominant", "sunrise", "sunset"])
+          .not.toContain(m.member);
+      }
+    }
   });
+});
 
-  test("makes geocoding search arguments selectable without colliding with output columns", () => {
-    const byId = new Map(
-      expanded(GEOCODING_SEMANTIC_TAGS).map((member) => [
-        member.member_id,
-        member,
-      ]),
-    );
-    expect(byId.get("query_name")?.source_argument).toBe("name");
-    expect(byId.get("requested_country_code")?.source_argument).toBe(
-      "country_code",
-    );
-    expect(byId.get("country_code")?.column).toBe("country_code");
+describe("daily calendar dates", () => {
+  const variables = [{ name: "temperature_2m_max", kind: "double" as const }];
+  test.each([
+    ["Tokyo", "2023-12-31T15:00:00Z", 32400],
+    ["New York", "2024-01-01T05:00:00Z", -18000],
+    ["Kathmandu", "2023-12-31T18:15:00Z", 20700],
+    ["UTC", "2024-01-01T00:00:00Z", 0],
+  ])("labels %s's day without changing the UTC instant", (_, instant, offset) => {
+    const seconds = Date.parse(instant as string) / 1000;
+    const result = parseBlock({ time: [seconds], temperature_2m_max: [20] }, variables, false, offset as number);
+    expect(result.date).toEqual([19723]); // 2024-01-01 in Arrow date32 days
+    expect(result.time).toEqual([BigInt(seconds) * 1_000_000n]);
+  });
+  test("unknown offsets and missing times produce unknown dates, not a guessed UTC day", () => {
+    const result = parseBlock({ time: [1704067200, null] }, variables, false, NaN);
+    expect(result.date).toEqual([null, null]);
+    expect(parseBlock(undefined, variables, false, 0).date).toEqual([]);
+  });
+  test("hourly data does not acquire a daily date", () => {
+    expect(parseBlock({ time: [1704067200] }, variables, false).date).toBeUndefined();
   });
 });

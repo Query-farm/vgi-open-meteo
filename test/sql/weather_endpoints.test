@@ -42,6 +42,13 @@ WHERE temperature_2m IS NULL OR temperature_2m < -90 OR temperature_2m > 60;
 ----
 true
 
+# Explicit reanalysis selection is available with the same fixed schema.
+query TI
+SELECT model_selection, temperature_2m IS NOT NULL
+FROM open_meteo.main.historical_hourly(52.52, 13.41, '2024-01-01', '2024-01-02', model := 'era5') LIMIT 1;
+----
+era5	true
+
 query I
 SELECT count(*) = 2 FROM open_meteo.main.historical_daily(52.52, 13.41, '2024-01-01', '2024-01-02');
 ----

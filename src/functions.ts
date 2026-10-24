@@ -61,7 +61,8 @@ const QUALIFY = (name: string): string => `open_meteo.main.${name}`;
 const LATITUDE_CONSTRAINT: ArgumentConstraints = { ge: -90, le: 90 };
 const LONGITUDE_CONSTRAINT: ArgumentConstraints = { ge: -180, le: 180 };
 import { parseBlock } from "./weather.js";
-import { omGet, type OmQuery } from "./open-meteo.js";
+import { omGet, omGetWithMetadata, type OmQuery } from "./open-meteo.js";
+import { contextFields, modelSelection, responseContext } from "./provenance.js";
 import { apiKeyFromParams } from "./attach-options.js";
 import {
   ELEVATION_SEMANTIC_TAGS,
@@ -214,10 +215,11 @@ function buildArgSpec(config: EndpointConfig): {
   }
   if (config.args.timezone) {
     namedArgs.timezone = utf8();
-    argDefaults.timezone = "GMT";
+    argDefaults.timezone = config.block === "daily" ? "auto" : "GMT";
     argDocs.timezone =
-      "IANA timezone or 'auto'. Daily aggregates are bucketed in this zone; time columns are always emitted as UTC. " +
+      "IANA timezone or 'auto'. Daily intervals use the provider's fixed UTC offset for this zone; DST transitions within a response are not applied. Time columns are always emitted as UTC. " +
       "'auto' resolves from each row's own coordinates, so under a LATERAL join every location gets its local zone. " +
+      "Daily functions default to 'auto'; other functions default to GMT. " +
       "The value must be a constant — a named argument cannot read a column.";
   }
   if (config.args.units) {
@@ -233,6 +235,14 @@ function buildArgSpec(config: EndpointConfig): {
     argConstraints.temperature_unit = { choices: ["celsius", "fahrenheit"] };
     argConstraints.wind_speed_unit = { choices: ["kmh", "ms", "mph", "kn"] };
     argConstraints.precipitation_unit = { choices: ["mm", "inch"] };
+  }
+  if (config.args.model) {
+    namedArgs.model = utf8();
+    argDefaults.model = "best_match";
+    argDocs.model = "One Open-Meteo model selector (default best_match). " +
+      (config.args.dateRange ? "Use era5 for a consistent historical reanalysis product. " : "For example, gfs_global selects the GFS product. ") +
+      "This records a requested selection, not the resolved source or model run of every variable. Comma-separated lists are not supported.";
+    argConstraints.model = { pattern: "^[A-Za-z0-9_]+$" };
   }
   if (config.args.models) {
     namedArgs.models = utf8();
@@ -258,13 +268,14 @@ function blockFunctionTags(
   if (config.args.dateRange) extras.push("a start_date/end_date range is required (yyyy-mm-dd)");
   if (config.args.forecastDays) extras.push("the window is set with forecast_days / past_days");
   if (config.args.units) extras.push("units are configurable (temperature_unit, wind_speed_unit, precipitation_unit)");
+  if (config.args.model) extras.push("select one model with model; model_selection records that request, while retrieved_at records response retrieval, not forecast issuance");
   if (config.args.models) extras.push("specific models can be selected with the models argument");
   if (config.args.timezone) {
     extras.push(
       config.block === "current"
-        ? "timezone does not change the result — instants are emitted in UTC and there are no buckets"
+        ? "timezone changes response context; weather instants remain UTC"
         : "timezone only shifts where the window starts and how daily buckets are aligned — instants stay UTC; " +
-          "use timezone := 'auto' to give every location its own local day, since it is resolved from each row's coordinates",
+          "use timezone := 'auto' to resolve the zone from each row's coordinates; the provider holds one UTC offset across a response",
     );
   }
   const extraNote = extras.length ? ` Notes: ${extras.join("; ")}.` : "";
@@ -295,7 +306,7 @@ function blockFunctionTags(
       `its \`latitude\`/\`longitude\` straight in — the positional arguments take column references, ` +
       `so name → weather stays one query.`,
     "",
-    `Returned columns are \`time\` plus ${cols} and more — see the result schema for the ` +
+    `Returned columns are \`time\`${config.block === "daily" ? " and the calendar `date`" : ""} plus ${cols} and more — see the result schema for the ` +
       `full set with types.${decodeNote} Runnable queries live in this function's example ` +
       `queries rather than inline here.`,
   ].join("\n");
@@ -305,7 +316,7 @@ function blockFunctionTags(
     "vgi.doc_md": docMd,
     "vgi.result_columns_schema": resultColumnsSchema(outputSchema),
     "vgi.category": config.category,
-    ...weatherSemanticTags(config),
+    ...weatherSemanticTags(config.name),
   };
 }
 
@@ -335,9 +346,10 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   const reqPos = config.args.dateRange ? ", '2024-06-01', '2024-06-07'" : "";
   // Project a few representative columns instead of `SELECT *`, so each example
   // teaches which columns matter (and isn't a low-effort star dump). `current`
-  // is a single row; the rest get an explicit ORDER BY time.
-  const preview = ["time", ...config.variables.slice(0, 2).map((v) => v.name)].join(", ");
-  const order = isCurrent ? "" : " ORDER BY time";
+  // is a single row; daily examples use local dates and other steps use UTC.
+  const timeColumn = config.block === "daily" ? "date" : "time";
+  const preview = [timeColumn, ...config.variables.slice(0, 2).map((v) => v.name)].join(", ");
+  const order = isCurrent ? "" : ` ORDER BY ${timeColumn}`;
   const examples: { sql: string; description: string }[] = [
     {
       sql: `SELECT ${preview} FROM ${qname}(52.52, 13.41${reqPos})${order}`,
@@ -365,6 +377,13 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       description: "Imperial units (°F, mph).",
     });
   }
+  if (config.args.model) {
+    const model = config.args.dateRange ? "era5" : "gfs_global";
+    examples.push({
+      sql: `SELECT ${preview}, model_selection, grid_latitude, grid_longitude, retrieved_at FROM ${qname}(52.52, 13.41${reqPos}, model := '${model}')${order}`,
+      description: "Select a model explicitly and inspect the response provenance. Retrieval time does not identify the forecast run.",
+    });
+  }
   if (config.args.models && config.defaultModels) {
     // Climate is the only models-taking endpoint with required dates, and its
     // interesting window is a projected year rather than the shared `reqPos`
@@ -388,7 +407,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   }
   // The blended payoff: coordinates can come from a column, so many locations
   // are one correlated join instead of a UNION ALL per site.
-  const latPreview = ["w.time", ...config.variables.slice(0, 1).map((v) => `w.${v.name}`)].join(", ");
+  const latPreview = [`w.${timeColumn}`, ...config.variables.slice(0, 1).map((v) => `w.${v.name}`)].join(", ");
   examples.push({
     sql:
       `SELECT c.city, ${latPreview} FROM (VALUES ('Berlin', 52.52, 13.41), ('Tokyo', 35.69, 139.69)) AS c(city, lat, lon), ` +
@@ -403,7 +422,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
   // column references, so it stays a single query.
   const [place1, place2] = config.examplePlaces ?? ["Berlin", "Tokyo"];
   const geocode = QUALIFY("geocoding");
-  const orderW = isCurrent ? "" : " ORDER BY w.time";
+  const orderW = isCurrent ? "" : ` ORDER BY w.${timeColumn}`;
   examples.push({
     sql:
       `SELECT g.name, ${latPreview} FROM ${geocode}('${place1}', count := 1) AS g, ` +
@@ -426,7 +445,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
       sql:
         `SELECT p.city, ${latPreview} FROM (VALUES ('${place1}'), ('${place2}')) AS p(city), ` +
         `LATERAL ${geocode}(p.city, count := 1) AS g, ` +
-        `LATERAL ${qname}(g.latitude, g.longitude${reqPos}, timezone := 'auto') AS w ORDER BY p.city, w.time`,
+        `LATERAL ${qname}(g.latitude, g.longitude${reqPos}, timezone := 'auto') AS w ORDER BY p.city, w.${timeColumn}`,
       description:
         config.block === "daily"
           ? "Several places, each bucketed in its own local day: 'auto' resolves the zone from each row's coordinates."
@@ -450,6 +469,7 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
     onBind: () => ({ outputSchema }),
     process: async (params, batch, out) => {
       const apikey = apiKeyFromParams(params);
+      const selectedModel = config.args.model ? modelSelection(params.args.model) : "provider_default";
 
       // One upstream query per input row. Rows whose coordinates (or required
       // dates) are NULL are dropped rather than sent — a 1->0 fan-out, which
@@ -486,25 +506,33 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
         if (config.args.models && params.args.models) {
           q.models = params.args.models as string;
         }
+        if (config.args.model) q.models = selectedModel;
         pending.push({ row, q });
       }
 
       const responses = await mapLimit(pending, MAX_UPSTREAM_CONCURRENCY, (p) =>
-        omGet(config.host, config.path, p.q, { apikey, ttlMs: config.cacheTtlMs }),
+        omGetWithMetadata(config.host, config.path, p.q, { apikey, ttlMs: config.cacheTtlMs }),
       );
 
       // Concatenate every row's block into ONE output batch, recording the
       // input row each output row came from. Emitting per input row instead
       // would be wrong: a blended process() emits a single batch.
       const cols: Record<string, any[]> = { time: [] };
+      if (config.block === "daily") cols.date = [];
       for (const v of config.variables) cols[v.name] = [];
+      for (const f of contextFields(config.name)) cols[f.name] = [];
       const parentRows: number[] = [];
 
       for (let i = 0; i < pending.length; i++) {
-        const data = responses[i];
-        const block = parseBlock(data?.[config.block], config.variables, isCurrent);
+        const data = responses[i].data;
+        const block = parseBlock(data?.[config.block], config.variables, isCurrent,
+          config.block === "daily" ? (data?.utc_offset_seconds ?? NaN) : undefined);
         appendAll(cols.time, block.time);
+        if (config.block === "daily") appendAll(cols.date, block.date);
         for (const v of config.variables) appendAll(cols[v.name], block[v.name]);
+        for (const [name, values] of Object.entries(responseContext(config, responses[i], selectedModel, block.time))) {
+          appendAll(cols[name], values);
+        }
         for (let k = 0; k < block.time.length; k++) parentRows.push(pending[i].row);
       }
 

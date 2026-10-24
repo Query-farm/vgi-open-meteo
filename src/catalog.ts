@@ -78,7 +78,7 @@ const SCHEMA_DOC_LLM =
   "climate-projection categories, plus two helpers: geocoding to resolve place names to coordinates " +
   "and elevation to look up terrain height. All functions share one calling convention — a WGS84 " +
   "latitude/longitude and named optional arguments (timezone, units, forecast_days, date ranges, " +
-  "models) — and emit UTC timestamps. Positional arguments accept columns, so use a LATERAL join " +
+  "model for forecast/history, models for specialist functions) — and emit UTC timestamps. Positional arguments accept columns, so use a LATERAL join " +
   "over a bounded coordinates table for multi-location queries or to chain geocoding into weather. " +
   "The schema also provides inline SQL " +
   "decoding macros in its 'helpers' category — weather_code_text and weather_code_emoji (WMO code), " +
@@ -110,7 +110,7 @@ const SCHEMA_DOC_MD = [
 
 const SCHEMA_CATEGORIES = [
   { name: "forecast", title: "Weather Forecast", description: "Hourly, daily and current weather forecasts for a coordinate." },
-  { name: "historical", title: "Historical Weather", description: "Reanalysis weather from 1940 to present (ERA5 archive)." },
+  { name: "historical", title: "Historical Weather", description: "Historical modeled weather from 1940 to present. Defaults can combine reanalysis and forecast-model archives; these are not station observations." },
   { name: "air-quality", title: "Air Quality", description: "Pollutant concentrations and AQI, current and forecast." },
   { name: "marine", title: "Marine", description: "Wave and swell forecasts for ocean points." },
   { name: "flood", title: "Flood", description: "River-discharge and flood outlooks." },
@@ -178,8 +178,16 @@ const AGENT_TEST_TASKS = [
     prompt: "Compare Berlin's latest hourly temperature forecast with forecasts made one and three days earlier.",
   },
   {
-    name: "multi_location_average_temperature",
-    prompt: "For Berlin and Tokyo, return average hourly temperature by location and UTC hour for the next day using the semantic model.",
+    name: "multi_location_period_summary",
+    prompt: "Using the semantic model, summarize the next seven local days separately for Berlin and Tokyo: total precipitation, highest temperature and lowest temperature. Keep each city's results separate.",
+  },
+  {
+    name: "tokyo_daily_conditions",
+    prompt: "Using the semantic model, show Tokyo's next three local calendar dates, daily high temperature and readable weather conditions. Start from the place name.",
+  },
+  {
+    name: "berlin_historical_rain_hours",
+    prompt: "Using the semantic model, find total precipitation and total hours with precipitation for Berlin during June 1–7, 2024, in local days. Include the number of days with precipitation data, and label the units.",
   },
   // The two below deliberately withhold coordinates: a person asking about the
   // weather names a place, so the analyst has to find the geocoding bridge
@@ -331,7 +339,7 @@ export const openMeteoCatalog: CatalogDescriptor = {
       binding_key: "open_meteo",
       title: "Open-Meteo Weather",
       description:
-        "Point weather, climate, air-quality, marine, geocoding, and terrain data from Open-Meteo.",
+        "All returned fields and deliberate measures for forecasts, historical weather, air quality, places and terrain. Daily dates label the provider's fixed-offset days in each location's zone by default; hourly time rollups use UTC. Specialist APIs remain available through SQL.",
       default_timezone: "UTC",
     }),
   },

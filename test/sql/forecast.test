@@ -28,6 +28,30 @@ FROM open_meteo.main.forecast_hourly(52.52, 13.41) LIMIT 1;
 ----
 TIMESTAMP WITH TIME ZONE	DOUBLE	INTEGER	BOOLEAN
 
+# Fields needed for forecast interpretation and response provenance.
+query TTTTT
+SELECT typeof(dew_point_2m), typeof(precipitation_probability),
+       typeof(retrieved_at), typeof(interval_start), typeof(interval_seconds)
+FROM open_meteo.main.forecast_hourly(52.52, 13.41) LIMIT 1;
+----
+DOUBLE	DOUBLE	TIMESTAMP WITH TIME ZONE	TIMESTAMP WITH TIME ZONE	INTEGER
+
+query III
+SELECT count(dew_point_2m) > 0, count(precipitation_probability) > 0,
+       count(*) FILTER (WHERE precipitation_probability < 0 OR precipitation_probability > 100) = 0
+FROM open_meteo.main.forecast_hourly(52.52, 13.41);
+----
+true	true	true
+
+query TIII
+SELECT model_selection, grid_latitude IS NOT NULL AND grid_longitude IS NOT NULL,
+       interval_end = time AND interval_start::TIMESTAMP = time::TIMESTAMP - INTERVAL '1 hour',
+       retrieved_at IS NOT NULL
+FROM open_meteo.main.forecast_hourly(52.52, 13.41, model := 'gfs_global', forecast_days := 1)
+LIMIT 1;
+----
+gfs_global	true	true	true
+
 # 7 forecast days × 24 hours = 168 hourly rows by default
 query I
 SELECT count(*) = 168 FROM open_meteo.main.forecast_hourly(52.52, 13.41);
@@ -81,6 +105,15 @@ FROM open_meteo.main.forecast_daily(35.69, 139.69, timezone := 'Asia/Tokyo', for
 ----
 15	true
 
+# Daily defaults follow the location's calendar, and DATE is independent of
+# the UTC instant. No ICU is needed to check Tokyo's fixed +09:00 offset.
+query TII
+SELECT typeof(date), hour(time::TIMESTAMP),
+       date = (time::TIMESTAMP + INTERVAL '9 hours')::DATE
+FROM open_meteo.main.forecast_daily(35.69, 139.69, forecast_days := 1);
+----
+DATE	15	true
+
 # ============================================================================
 # forecast_current — exactly one row
 # ============================================================================
@@ -94,6 +127,13 @@ query I
 SELECT temperature_2m IS NOT NULL FROM open_meteo.main.forecast_current(52.52, 13.41);
 ----
 true
+
+query III
+SELECT interval_seconds > 0, interval_end = time,
+       interval_start::TIMESTAMP = time::TIMESTAMP - interval_seconds * INTERVAL '1 second'
+FROM open_meteo.main.forecast_current(52.52, 13.41);
+----
+true	true	true
 
 statement ok
 DETACH open_meteo;

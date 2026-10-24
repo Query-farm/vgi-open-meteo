@@ -17,7 +17,8 @@ make typecheck      # bunx tsc --noEmit
 make worker         # stdio worker (for DuckDB ATTACH ... TYPE vgi, LOCATION 'bun run ...')
 make serve          # HTTP server on $VGI_HTTP_PORT (default 8000)
 
-make test           # test-stdio + test-http (sqllogictest, 135 assertions, live API)
+make test           # unit tests + stdio/HTTP SQL integration tests (live API)
+make test-semantic  # offline worker + reference semantic compiler acceptance tests
 make test-stdio     # run test/sql/*.test against the bun stdio worker
 make test-http      # boot a local HTTP server, run the suite against it, stop it
 make test-cf        # run against the deployed Cloudflare Worker ($WORKER_CF)
@@ -210,16 +211,23 @@ per-member dynamic columns that don't fit a static Arrow schema.
   appends `&apikey=` — both are required together for the commercial tier.
 - `src/endpoints.ts` — `EndpointConfig` records: host, path, block kind, the
   **curated fixed variable list** (`WeatherVar` = name + `kind`), and which args
-  the function accepts. This is the analog of the old `TripConfig`. Archive
-  (ERA5) uses a narrower hourly var set (`ARCHIVE_HOURLY`) — no
+  the function accepts. This is the analog of the old `TripConfig`. The archive
+  API uses a narrower hourly var set (`ARCHIVE_HOURLY`) — no
   visibility/uv_index/is_day, which the archive API 400s on.
 - `src/schemas.ts` — `blockSchema(config)` builds a block function's Arrow
-  schema (UTC `time` column + one column per variable, typed from its `kind`);
+  schema (UTC `time`, calendar `date` for daily blocks, and typed weather variables);
   plus the static `GEOCODING_SCHEMA` and `ELEVATION_SCHEMA`. `field()` carries
   the `comment` metadata key DuckDB surfaces via `DESCRIBE`.
 - `src/weather.ts` — `parseBlock()` zips a response block into name-keyed
   column arrays: parallel arrays for hourly/daily, scalars (one row) for
   `current`. See "Timestamps".
+- `src/provenance.ts` — explicit provenance/interval columns shared by physical
+  schemas and semantic dimensions; parses provider context without inventing
+  model run times. `retrieved_at` comes from `omGetWithMetadata()` and survives
+  worker-cache hits.
+- `src/temporal.ts` — versioned `open_meteo.temporal` field-support definitions.
+  The standard VGI member schema disallows extra temporal properties, so this
+  is a separate function tag; the reference compiler does not enforce it.
 - `src/functions.ts` — `defineWeatherFunction(config)` generates the 11 block
   functions; `geocoding` and `elevation` are defined directly. All read the API
   key via `apiKeyFromParams(params)`.
@@ -443,3 +451,63 @@ the "Unsupported Internal Arrow Type" error again, check for a duplicated
 - **Catalog version advertising** — `attach()` hardcodes
   `resolved_implementation_version`/`resolved_data_version` to null; wiring
   `DATA_VERSION`/`GIT_COMMIT` through needs framework support.
+
+## Curated semantic model
+
+`src/semantic.ts` explicitly defines the everyday-weather vocabulary. Do not
+regenerate members or average measures from endpoint schemas or variable-name
+patterns. Shared helpers serialize the contract and share explicitly chosen
+concepts. The allowlist covers current/hourly/daily forecasts, hourly/daily
+history, current/hourly air quality, geocoding, elevation and weather codes.
+Specialist endpoints remain SQL-only.
+
+Forecast/current and historical functions accept one `model` selector (default
+`best_match`); it maps to upstream `models`. Reject lists because multiple
+upstream models rename columns and invalidate the fixed schema. Specialist
+functions retain their existing plural `models` option. `model_selection` is
+requested selection provenance, not resolved per-variable attribution. Never
+derive model-run/issue/lead times from retrieval time or model-update status.
+No unique run is supplied by these regular response APIs.
+
+Every physical output of a modeled function must have a visible member with
+the same identifier and SQL type, a readable title, and a reviewed definition.
+Simplify aggregate measures, not field availability. Forecast and archive rain
+have different meanings. Snowfall depth uses cm in metric mode, precipitation
+water equivalent uses mm; both use inches in imperial mode. Hourly irradiance
+(W/m²) and daily radiant energy (MJ/m²) are different quantities. Coverage counts
+must identify the variable counted; daily temperature coverage requires both
+extremes. Do not average directions, category codes or daily highs/lows into a
+supposed mean temperature. Sources are linked in README.md.
+
+Forecast dew point follows temperature units; precipitation probability remains
+percent with either precipitation-unit setting. Only maximum hourly probability
+is a supported probability summary; it is not a period event probability.
+The probability threshold is nominal (0.1 mm/hour), with source-native and
+interpolation caveats. Do not encode a universal exact threshold comparison.
+
+Every modeled weather variable needs an explicit `open_meteo.temporal` entry.
+Keep instantaneous values, preceding intervals, provider days, event times and
+source-dependent support distinct. Hourly bounds end at `time`; daily bounds
+start at `time`; current bounds use actual `current.interval` or remain NULL.
+Do not apply accumulation windows to instantaneous fields, archive/current
+gusts, UV or pollutant-specific AQI windows. Bounds describe reporting support,
+not native model resolution. Unknown metadata stays unknown.
+
+Daily functions default to `timezone := 'auto'` where supported. Their `date`
+column is Arrow date32, computed from the daily interval's Unix timestamp plus
+Open-Meteo's response `utc_offset_seconds`. That offset is for the calendar label
+only: never shift `time`, sunrise or sunset. Missing offsets produce NULL dates.
+The provider holds one fixed offset across a response, so these intervals may
+not match civil days across a DST transition.
+The semantic daily date is a plain calendar dimension; hourly time rollups use
+UTC. Period totals and extrema are explicit measures, and weather descriptions
+come through optional to-one WMO relationships.
+
+`bun run test` runs the offline unit suite in CI. `make test-semantic` uses
+`VGI_LINT_PROJECT` (default `~/Development/vgi-lint-check`) for the reference
+compiler and haybarn. It attaches the real worker with a fixture-only fetch
+implementation and verifies selection of every modeled weather field, units,
+daily dates, independent missing values, condition joins and existing-table
+bindings with distinct sites sharing coordinates. Semantic bindings omit null
+coordinates; SQL LEFT JOIN LATERAL can retain those rows. No Open-Meteo calls
+are made.

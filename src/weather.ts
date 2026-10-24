@@ -48,13 +48,20 @@ function coerce(value: unknown, v: WeatherVar): unknown {
  * For `current` blocks the block holds scalars → exactly one row; for
  * hourly/daily it holds parallel arrays → one row per `time` entry. A
  * missing/empty block yields zero rows.
+ * Pass the daily response's UTC offset to also emit Arrow date32 day numbers;
+ * pass NaN for a missing offset so dates stay unknown rather than guessed.
  */
 export function parseBlock(
   block: any,
   variables: WeatherVar[],
   isCurrent: boolean,
+  dailyUtcOffsetSeconds?: number,
 ): Record<string, any[]> {
   const cols: Record<string, any[]> = { time: [] };
+  // Offset is used ONLY to label a calendar date, never to shift an instant.
+  // Open-Meteo defines its daily boundaries with this response-level offset.
+  const daily = dailyUtcOffsetSeconds !== undefined;
+  if (daily) cols.date = [];
   for (const v of variables) cols[v.name] = [];
 
   if (!block) return cols;
@@ -70,6 +77,12 @@ export function parseBlock(
   const times: unknown[] = Array.isArray(block.time) ? block.time : [];
   for (let row = 0; row < times.length; row++) {
     cols.time.push(unixToUtcMicros(times[row]));
+    if (daily) {
+      const seconds = times[row];
+      cols.date.push(typeof seconds === "number" && Number.isFinite(seconds) && Number.isFinite(dailyUtcOffsetSeconds)
+        ? Math.floor((seconds + dailyUtcOffsetSeconds!) / 86400)
+        : null);
+    }
     for (const v of variables) {
       const arr = block[v.name];
       cols[v.name].push(coerce(Array.isArray(arr) ? arr[row] : null, v));

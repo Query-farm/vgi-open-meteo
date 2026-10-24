@@ -22,12 +22,13 @@ export class OpenMeteoError extends Error {
   }
 }
 
-interface CacheEntry {
+export interface OmResponse {
   data: any;
-  fetchedAt: number;
+  /** Time the upstream JSON was received, retained on worker-cache hits. */
+  retrievedAt: number;
 }
 
-const _cache = new Map<string, CacheEntry>();
+const _cache = new Map<string, OmResponse>();
 
 async function httpGet(url: string): Promise<Response> {
   const controller = new AbortController();
@@ -73,6 +74,16 @@ export async function omGet(
   query: OmQuery,
   opts?: OmGetOptions,
 ): Promise<any> {
+  return (await omGetWithMetadata(host, path, query, opts)).data;
+}
+
+/** Fetch a response with its retrieval timestamp, without exposing API keys. */
+export async function omGetWithMetadata(
+  host: string,
+  path: string,
+  query: OmQuery,
+  opts?: OmGetOptions,
+): Promise<OmResponse> {
   const apikey = opts?.apikey && opts.apikey.length > 0 ? opts.apikey : undefined;
   const effectiveHost = apikey ? customerHost(host) : host;
 
@@ -88,7 +99,7 @@ export async function omGet(
   const ttl = opts?.ttlMs ?? DEFAULT_TTL_MS;
   const now = Date.now();
   const cached = _cache.get(url);
-  if (cached && now - cached.fetchedAt < ttl) return cached.data;
+  if (cached && now - cached.retrievedAt < ttl) return cached;
 
   const resp = await httpGet(url);
   if (!resp.ok) {
@@ -104,8 +115,9 @@ export async function omGet(
   }
 
   const data = await resp.json();
-  _cache.set(url, { data, fetchedAt: now });
-  return data;
+  const entry = { data, retrievedAt: Date.now() };
+  _cache.set(url, entry);
+  return entry;
 }
 
 /** Test-only helper: clear the response cache between tests. */

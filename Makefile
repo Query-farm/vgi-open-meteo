@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 .PHONY: install typecheck worker serve docker-build deploy \
         cf-dev cf-deploy cf-secret test-cf \
-        test test-stdio test-http
+        test test-unit test-semantic test-stdio test-http
 
 install:
 	bun install
@@ -24,7 +24,16 @@ WORKER_HTTP  ?= http://localhost:$(HTTP_PORT)
 WORKER_CF    ?= https://vgi-open-meteo.rusty-bb6.workers.dev
 
 # Default suite uses the local transports; test-cf hits the live deployment.
-test: test-stdio test-http
+test: test-unit test-stdio test-http
+
+test-unit:
+	bun run test
+
+# Offline semantic acceptance tests use the reference compiler and its haybarn
+# runtime. Override this path when the vgi-lint-check checkout lives elsewhere.
+VGI_LINT_PROJECT ?= $(HOME)/Development/vgi-lint-check
+test-semantic:
+	uv run --project "$(VGI_LINT_PROJECT)" python test/semantic/queries.py
 
 test-stdio:
 	VGI_OPEN_METEO_WORKER="$(WORKER_STDIO)" $(TEST_RUNNER) --test-dir $(CURDIR) "$(TEST_PATTERN)"
