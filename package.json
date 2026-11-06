@@ -50,12 +50,12 @@
   },
   "devDependencies": {
     "@query-farm/apache-arrow": "^21.1.1",
-    "@query-farm/vgi-rpc": "^0.29.3",
+    "@query-farm/vgi-rpc": "^0.29.5",
     "@types/bun": "^1.4.4",
-    "jose": "^6.2.13",
+    "jose": "^6.2.15",
     "typescript": "^7.0.2",
-    "vgi": "npm:@query-farm/vgi@^0.47.1",
-    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.29.3",
-    "wrangler": "^4.154.0"
+    "vgi": "npm:@query-farm/vgi@^0.48.0",
+    "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.29.5",
+    "wrangler": "^4.158.0"
   }
 }
