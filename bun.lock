@@ -5,14 +5,14 @@
     "": {
       "name": "@query-farm/vgi-open-meteo",
       "devDependencies": {
-        "@query-farm/apache-arrow": "latest",
-        "@query-farm/vgi-rpc": "latest",
-        "@types/bun": "latest",
-        "jose": "latest",
-        "typescript": "latest",
-        "vgi": "npm:@query-farm/vgi@latest",
-        "vgi-rpc": "npm:@query-farm/vgi-rpc@latest",
-        "wrangler": "latest",
+        "@query-farm/apache-arrow": "^21.1.1",
+        "@query-farm/vgi-rpc": "^0.29.7",
+        "@types/bun": "^1.4.4",
+        "jose": "^6.2.16",
+        "typescript": "^7.0.2",
+        "vgi": "npm:@query-farm/vgi@~0.48.6",
+        "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.29.7",
+        "wrangler": "^4.159.0",
       },
     },
   },
@@ -291,7 +291,7 @@
 
     "unenv": ["unenv@2.0.0-rc.24", "", { "dependencies": { "pathe": "^2.0.3" } }, "sha512-i7qRCmY42zmCwnYlh9H2SvLEypEFGye5iRmEMKjcGi7zk9UquigRjFtTLz0TYqr0ZGLZhaMHl/foy1bZR+Cwlw=="],
 
-    "vgi": ["@query-farm/vgi@0.49.0", "", { "dependencies": { "@noble/ciphers": "^2.3.0", "@query-farm/flechette": "^2.7.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": "^0.29.6" } }, "sha512-3kQF5lopSvWtCNPkzHQQ/wcPGZ3F6VD/nv2WfYMh+NRHJHfoVEvv72PqxI9Ve6IJK8yLmbH1UcFIpTXDaWcqVA=="],
+    "vgi": ["@query-farm/vgi@0.48.6", "", { "dependencies": { "@noble/ciphers": "^2.3.0", "@query-farm/flechette": "^2.7.1" }, "peerDependencies": { "@query-farm/apache-arrow": "^21.1.1", "@query-farm/vgi-rpc": "^0.29.7" } }, "sha512-Pc4fw3Wzs7eR2wjgVmJJaeZlTwNM00hd5xotNSxenurrxV+m62/VZ6839WcuJZgxw+B1iJSoqceQqwibSL73gQ=="],
 
     "vgi-rpc": ["@query-farm/vgi-rpc@0.29.7", "", { "dependencies": { "@noble/ciphers": "^2.2.0", "@query-farm/apache-arrow": "^21.1.1", "@query-farm/flechette": "^2.7.1", "fzstd": "^0.1.1", "oauth4webapi": "^3.8.6" }, "peerDependencies": { "@aws-sdk/client-s3": ">=3.0.0", "@aws-sdk/s3-request-presigner": ">=3.0.0", "@google-cloud/storage": ">=7.0.0", "@momics/iroh-http-node": ">=0.6.2 <1", "@number0/iroh": ">=1.1.0 <2", "@opentelemetry/api": ">=1.4.0" }, "optionalPeers": ["@aws-sdk/client-s3", "@aws-sdk/s3-request-presigner", "@google-cloud/storage", "@momics/iroh-http-node", "@number0/iroh", "@opentelemetry/api"] }, "sha512-leFlMh6uvEhH5DJ2HGVNKxeYsmI3zeFLJVyYIxwNDcRdjzcBje6NYu0ptuP6gE+eUawjM2iAsTGOScGg3wX/9g=="],
 

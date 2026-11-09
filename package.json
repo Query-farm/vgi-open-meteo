@@ -54,7 +54,7 @@
     "@types/bun": "^1.4.4",
     "jose": "^6.2.16",
     "typescript": "^7.0.2",
-    "vgi": "npm:@query-farm/vgi@^0.49.0",
+    "vgi": "npm:@query-farm/vgi@~0.48.6",
     "vgi-rpc": "npm:@query-farm/vgi-rpc@^0.29.7",
     "wrangler": "^4.159.0"
   }
