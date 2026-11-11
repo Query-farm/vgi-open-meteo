@@ -5,7 +5,6 @@
 <h1 align="center">vgi-open-meteo</h1>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@query-farm/vgi-open-meteo"><img alt="npm" src="https://img.shields.io/npm/v/@query-farm/vgi-open-meteo?logo=npm&color=CB3837"></a>
   <a href="https://github.com/Query-farm/vgi-open-meteo/pkgs/container/vgi-open-meteo"><img alt="Container image" src="https://img.shields.io/badge/ghcr.io-image-2496ED?logo=docker&logoColor=white"></a>
   <a href="https://open-meteo.com"><img alt="Data: Open-Meteo" src="https://img.shields.io/badge/data-Open--Meteo-0A9396"></a>
   <a href="https://github.com/Query-farm"><img alt="DuckDB: VGI extension" src="https://img.shields.io/badge/DuckDB-VGI%20extension-FFF000?logo=duckdb&logoColor=black"></a>
@@ -30,10 +29,6 @@ must be exactly that. Pick a transport:
 -- Hosted Cloudflare Worker (nothing to install)
 ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'https://vgi-open-meteo.rusty-bb6.workers.dev');
 
--- Run the worker yourself, straight from npm. DuckDB spawns it as a
--- subprocess and talks VGI over stdin/stdout; -y skips the install prompt.
-ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'npx -y @query-farm/vgi-open-meteo');
-
 -- Self-hosted HTTP server (see Docker, below)
 ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'http://localhost:8000');
 
@@ -44,7 +39,7 @@ ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'bun run /path/to/vgi-open-meteo/sr
 `TYPE vgi` requires a DuckDB build with the VGI extension (e.g.
 [haybarn](https://github.com/Query-farm)); `httpfs` is auto-loaded for the HTTP
 transports. The hosted worker and source build require a VGI client supporting
-protocol **3.0.0** (`vgi.v3`; VGI TypeScript 0.47.1 / VGI RPC 0.29), which ships
+protocol **3.2** (`vgi.v3`; VGI TypeScript 0.49 / VGI RPC 0.29), which ships
 with the Haybarn 2.0 VGI extension. Haybarn 1.5 clients cannot attach.
 
 The hosted worker also answers in a browser — open
@@ -53,14 +48,7 @@ function's signature and docs, and a copy-paste `ATTACH` line.
 
 ### Run it yourself
 
-The npm package is a single self-contained bundle — no transitive installs, and
-it runs on plain **node** (>= 20), which is what `npx` gives you:
-
-```bash
-npx -y @query-farm/vgi-open-meteo     # speaks VGI on stdin/stdout
-```
-
-Or serve it over HTTP with the container image, which is what you want for a
+Serve it over HTTP with the container image, which is what you want for a
 shared deployment:
 
 ```bash
