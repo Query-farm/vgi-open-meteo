@@ -39,7 +39,7 @@ ATTACH 'open_meteo' AS m (TYPE vgi, LOCATION 'bun run /path/to/vgi-open-meteo/sr
 `TYPE vgi` requires a DuckDB build with the VGI extension (e.g.
 [haybarn](https://github.com/Query-farm)); `httpfs` is auto-loaded for the HTTP
 transports. The hosted worker and source build require a VGI client supporting
-protocol **3.2** (`vgi.v3`; VGI TypeScript 0.49 / VGI RPC 0.29), which ships
+protocol **3.3** (`vgi.v3`; VGI TypeScript 0.50 / VGI RPC 0.29), which ships
 with the Haybarn 2.0 VGI extension. Haybarn 1.5 clients cannot attach.
 
 The hosted worker also answers in a browser — open

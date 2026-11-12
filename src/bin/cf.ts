@@ -23,7 +23,7 @@ import { buildRegistry, openMeteoCatalog, OpenMeteoCatalog } from "../catalog.js
 // Shown on the landing page. Kept in step with package.json by hand: the
 // tsconfig has neither resolveJsonModule nor package.json in `include`, so an
 // import here would need config changes for one string.
-const WORKER_VERSION = "0.3.0";
+const WORKER_VERSION = "0.4.0";
 
 export interface Env {
   /** Stable secret, SHA-256'd to the 32-byte state-token key. Set via
