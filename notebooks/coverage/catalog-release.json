@@ -1,0 +1,263 @@
+{
+  "schema_version": 1,
+  "repository": "Query-farm/vgi-open-meteo",
+  "revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+  "captured_at": "2026-11-14T23:47:35.630173+00:00",
+  "default_schema": "main",
+  "scope": "all_public_functions_and_tables",
+  "complete": true,
+  "objects": [
+    {
+      "schema": "main",
+      "name": "air_quality_current",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "air_quality_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "climate_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "elevation",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "ensemble_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "ensemble_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "european_aqi_category",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "flood_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, BIGINT, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "forecast_current",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "forecast_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "forecast_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "geocoding",
+      "kind": "function",
+      "signatures": [
+        "table(VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "historical_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "historical_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "marine_daily",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "marine_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "previous_runs_hourly",
+      "kind": "function",
+      "signatures": [
+        "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+      ],
+      "access": "read",
+      "authentication": "optional"
+    },
+    {
+      "schema": "main",
+      "name": "us_aqi_category",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "uv_index_category",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "weather_code_emoji",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "weather_code_text",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "wind_compass",
+      "kind": "function",
+      "signatures": [
+        "macro(None) -> None"
+      ],
+      "access": "read",
+      "authentication": "none"
+    },
+    {
+      "schema": "main",
+      "name": "weather_codes",
+      "kind": "table",
+      "signatures": [
+        "VIEW"
+      ],
+      "access": "read",
+      "authentication": "none"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "coverage/functions.json",
+      "sha256": "4f34300f3dcdb9fe367d2924b979b04743da73bf1ae110e99edfc622a4bc6d8f",
+      "description": "Actual public release attached through verified Bun tag launcher; complete DuckDB functions"
+    },
+    {
+      "path": "coverage/tables.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "description": "Actual public release attached through verified Bun tag launcher; complete DuckDB tables"
+    },
+    {
+      "path": "coverage/views.json",
+      "sha256": "61eaa51076ae46851e6c6319a584eef57074309a61e8264249a7025d1b37bb6c",
+      "description": "Actual public release attached through verified Bun tag launcher; complete DuckDB views"
+    },
+    {
+      "path": "coverage/catalog-metadata.json",
+      "sha256": "fb147248d25c7dfe268fa065b62618c9f4d8e6f3c52b33bf4220d1b241da68b7",
+      "description": "Actual public release attached through verified Bun tag launcher; complete DuckDB catalog-metadata"
+    }
+  ]
+}

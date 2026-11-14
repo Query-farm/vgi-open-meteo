@@ -1,0 +1,28 @@
+{
+  "current_revision": "359c1627c89674475c3f9052be8ecbe3c882bc60",
+  "release_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+  "source_sha256": {
+    "src/attach-options.ts": "b5f1dd8b24c5d228a1634c5eb2782ed4925911f0e1a63c010f2a2ea3b1008211",
+    "src/auth.ts": "4b91d3873da09c862c8827e40d03ca8968a151873c2e0d57e69ffba0714ca425",
+    "src/bin/cf.ts": "ab43bd358d93e30e234ed02f64a166afecd40a1979080b5007c42d946df92265",
+    "src/bin/serve.ts": "c60fd27fbfef301134a1f5a7ce711b7df5e3e3fa8317c6d99046d92b8cda0e35",
+    "src/bin/worker.ts": "f2cb1f7ae0f95ff5acca28db3e55179901b70bb1b656d3feb80b0dc4833fc8bc",
+    "src/catalog.ts": "c43b0c00ca388be014a685031134d78aaf39de14913e8536c87b5810e4395e15",
+    "src/composed-examples.ts": "9c1342315de21af67d381c6a313e4b4722b1eda082cf85c8edc4663fccdfd7b2",
+    "src/endpoints.ts": "3bb46f017e5c2e136ba99d1da13ca9a5d11c9f8e73890d069a30822516aa0bf9",
+    "src/functions.ts": "640d62f076690cdbcdcdf1da5093cc27bf06d03acd11fb40ef3338ae96909f6b",
+    "src/macros.ts": "58206b1a4aebbd278afe52d7e7b0d8b98efe4aa471ce6bbce41162ffe969f068",
+    "src/multi-location.ts": "590bae6fdfef6f3527c24f1b1f361d9916bd38af43b1d6a4c0e38d8b4af90552",
+    "src/open-meteo.ts": "ba2ea6c9ac087bd1dc0428de34175d04e5d07dd554279841ca08be6b4b7072bd",
+    "src/provenance.ts": "f0e20f7b90ba17830548fb96ce80dffb1cf5cecc4bee45550c09a18dabef6c62",
+    "src/schemas.ts": "38e05ab7ab552971c38cf1485909fd7570e203840a235127e04024e847b56d5a",
+    "src/semantic.ts": "f6e9c99d8f2a320e8bf0eb51c058735b2700a6a9d81b43f8959360c38c79cd62",
+    "src/temporal.ts": "2f7b476a73768cd4f0e0f55222941192ab53db49615847b5dde8eec678129b96",
+    "src/weather.ts": "bff7ebfb06e25f353a75fc8e407ea550bb7aa49ddb96ff9bb1437e6fcd8d01db"
+  },
+  "full_public_registration": "One open_meteo catalog / main schema, allWeatherFunctions:16 table functions; WEATHER_MACROS:six scalar macros; weather_codes view:one relation. Total23logical names, no aliases/overload duplication, COPY handlers or hidden authenticated/write APIs. Optional commercial attachkey does not remove names.",
+  "source_diff_review": "Only composed SQL examples, task and subtitle metadata added. Function registrations, signatures, output fields, request and parsing logic, macros, view and runtime dependencies unchanged. Current evidence is interface compatibility, not exact-current notebook execution.",
+  "branding": "Title from actual release vgi.title; exact published subtitle from current src/catalog.ts since release has no vgi.subtitle.",
+  "reviewer": "Codex /root",
+  "reviewed_at": "2026-11-14T23:47:35.630173+00:00"
+}

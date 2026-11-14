@@ -1,0 +1,1420 @@
+{
+  "schema_version": 1,
+  "status": "met",
+  "meets_target": true,
+  "catalogs": {
+    "released": {
+      "catalog_status": "verified",
+      "revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+      "collection_reconciled": false,
+      "denominator": 23,
+      "observed_objects": 23,
+      "required": 12,
+      "verified_count": 14,
+      "candidate_count": 0,
+      "fraction": 0.6086956521739131,
+      "meets_target": true,
+      "exact_runtime_count": 14,
+      "runtime_revisions": [
+        "67b18aedaf207cfea721121968bbec4ea0e0f735"
+      ],
+      "covered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_current"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "elevation"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "european_aqi_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_current"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "geocoding"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "us_aqi_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "uv_index_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_emoji"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_text"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_codes"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "wind_compass"
+        }
+      ],
+      "uncovered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "climate_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "flood_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "previous_runs_hourly"
+        }
+      ],
+      "objects": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_current",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "climate_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "elevation",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "european_aqi_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "flood_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_current",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "geocoding",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "previous_runs_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "us_aqi_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "uv_index_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_emoji",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_text",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_codes",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [
+            "VIEW"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "wind_compass",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        }
+      ],
+      "issues": []
+    },
+    "current": {
+      "catalog_status": "verified",
+      "revision": "359c1627c89674475c3f9052be8ecbe3c882bc60",
+      "catalog_sha256": "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849",
+      "collection_reconciled": false,
+      "denominator": 23,
+      "observed_objects": 23,
+      "required": 12,
+      "verified_count": 14,
+      "candidate_count": 0,
+      "fraction": 0.6086956521739131,
+      "meets_target": true,
+      "exact_runtime_count": 0,
+      "runtime_revisions": [
+        "67b18aedaf207cfea721121968bbec4ea0e0f735"
+      ],
+      "covered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_current"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "elevation"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "european_aqi_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_current"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "geocoding"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "us_aqi_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "uv_index_category"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_emoji"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_text"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_codes"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "wind_compass"
+        }
+      ],
+      "uncovered": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "climate_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "flood_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_daily"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_hourly"
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "previous_runs_hourly"
+        }
+      ],
+      "objects": [
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_current",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "air_quality_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "climate_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "elevation",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "ensemble_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "european_aqi_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "flood_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_current",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "forecast_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "geocoding",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "historical_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_daily",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "marine_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, BIGINT, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "previous_runs_hourly",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "table(DOUBLE, DOUBLE, VARCHAR, VARCHAR, BIGINT, VARCHAR, VARCHAR, VARCHAR, BIGINT) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "optional"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "us_aqi_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "uv_index_category",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_emoji",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_code_text",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "weather_codes",
+          "kinds": [
+            "table"
+          ],
+          "signatures": [
+            "VIEW"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        },
+        {
+          "schema": [
+            "main"
+          ],
+          "name": "wind_compass",
+          "kinds": [
+            "function"
+          ],
+          "signatures": [
+            "macro(None) -> None"
+          ],
+          "access": [
+            "read"
+          ],
+          "authentication": [
+            "none"
+          ]
+        }
+      ],
+      "issues": []
+    }
+  },
+  "interface_drift": {
+    "known": true,
+    "current_only": [],
+    "released_only": [],
+    "changed": []
+  },
+  "notebooks": {
+    "01_weather_windows.ipynb": {
+      "verified": true,
+      "issues": []
+    },
+    "02_weather_codes_and_hourly_selection.ipynb": {
+      "verified": true,
+      "issues": []
+    },
+    "03_air_quality_indices_are_different_scales.ipynb": {
+      "verified": true,
+      "issues": []
+    }
+  },
+  "examples": [
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "geocoding"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "forecast_hourly"
+      },
+      "notebook": "01_weather_windows.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "forecast_daily"
+      },
+      "notebook": "01_weather_windows.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "forecast_current"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "elevation"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "weather_codes"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "weather_code_text"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "weather_code_emoji"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "wind_compass"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "uv_index_category"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "air_quality_current"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "air_quality_hourly"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "us_aqi_category"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    },
+    {
+      "status": "verified",
+      "issues": [],
+      "verified_catalogs": [
+        "released",
+        "current"
+      ],
+      "object": {
+        "schema": [
+          "main"
+        ],
+        "name": "european_aqi_category"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "runtime_revision": "67b18aedaf207cfea721121968bbec4ea0e0f735",
+      "runtime_catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6"
+    }
+  ],
+  "issues": []
+}

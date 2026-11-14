@@ -511,4 +511,4 @@ MIT — see [LICENSE](LICENSE). Weather data © Open-Meteo, licensed
 
 ## Executed notebooks
 
-[Weather windows in SQL](notebooks/README.md) compares two cities, daily boundaries and hourly forecast aggregation through the published worker.
+[Three executed SQL notebooks](notebooks/README.md) explore daily time boundaries, decoded weather and hourly selection, and distinct air-quality index scales. Each uses the public worker release, includes SVG charts and a parameter experiment, and links directly to Google Colab.

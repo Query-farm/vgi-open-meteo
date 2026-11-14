@@ -1,0 +1,585 @@
+{
+  "schema_version": 1,
+  "catalogs": {
+    "released": {
+      "path": "coverage/catalog-release.json",
+      "sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "catalog_sha256": "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+        "notes": "Complete23named public surfaces:16table functions,6scalar macros,1weather_codes view. No exclusions for optional commercial access. Current source only adds metadata, signatures and semantics unchanged; notebooks executed exactrelease, current compatible evidence only."
+      }
+    },
+    "current": {
+      "path": "coverage/catalog-current.json",
+      "sha256": "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849",
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "catalog_sha256": "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849",
+        "notes": "Complete23named public surfaces:16table functions,6scalar macros,1weather_codes view. No exclusions for optional commercial access. Current source only adds metadata, signatures and semantics unchanged; notebooks executed exactrelease, current compatible evidence only."
+      }
+    }
+  },
+  "notebooks": [
+    {
+      "path": "01_weather_windows.ipynb",
+      "sha256": "33f5c22bba8d95dad1bbc9a79cf605c4fb61c6eead76b82ac60d65a7a4a43ad3",
+      "execution": {
+        "path": "coverage/run-01.json",
+        "sha256": "4999c72dae6d507860adc7899a538470566c05e2edef75a2a25bb685a67fc235"
+      }
+    },
+    {
+      "path": "02_weather_codes_and_hourly_selection.ipynb",
+      "sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+      "execution": {
+        "path": "coverage/run-02.json",
+        "sha256": "921c6b79044ee2e8097b4281471fb5a2d1f9112c0b029ccad2c85a250b5be74a"
+      }
+    },
+    {
+      "path": "03_air_quality_indices_are_different_scales.ipynb",
+      "sha256": "cf612e59ff5e39ded246c29f537b4a035ac5ae3e2bda37026d8cb5b12aac4e5d",
+      "execution": {
+        "path": "coverage/run-03.json",
+        "sha256": "57df08622c021fce17cd91dea2caec00869624790fd86a292c1947e9936620aa"
+      }
+    }
+  ],
+  "examples": [
+    {
+      "object": {
+        "schema": "main",
+        "name": "geocoding"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.geocoding"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story"
+      ],
+      "result_cells": [
+        "location-result"
+      ],
+      "interpretation_cells": [
+        "location-result"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Resolve Tokyo and inspect the coordinate/country/timezone before querying modeled weather.",
+        "finding": "Exactly one Japanese candidate is used. Geocoded elevation, separate terrain lookup and modelgrid elevation remain distinct source properties."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "forecast_hourly"
+      },
+      "notebook": "01_weather_windows.ipynb",
+      "sql": [
+        {
+          "cell": "f090aa60",
+          "reference": "weather.main.forecast_hourly"
+        }
+      ],
+      "narrative_cells": [
+        "f75da851",
+        "2d133cf0"
+      ],
+      "result_cells": [
+        "0bd83fd3",
+        "7574b64a",
+        "70d6267a"
+      ],
+      "interpretation_cells": [
+        "7574b64a",
+        "5ecdbc43"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "33f5c22bba8d95dad1bbc9a79cf605c4fb61c6eead76b82ac60d65a7a4a43ad3",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Materialize paddedUTC hourly values and reconstruct daily extremes/precipitation with variable-specific interval inclusion.",
+        "finding": "Six selected provider days all have24temperature/precipitation values; reconstruction aligns physical windows. Differences from daily products are not observed forecast error. The GMTexperiment changes selectedintervals while retainingunits."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "forecast_daily"
+      },
+      "notebook": "01_weather_windows.ipynb",
+      "sql": [
+        {
+          "cell": "f090aa60",
+          "reference": "weather.main.forecast_daily"
+        }
+      ],
+      "narrative_cells": [
+        "a10a6369",
+        "2d133cf0"
+      ],
+      "result_cells": [
+        "55b3727a",
+        "7574b64a",
+        "70d6267a"
+      ],
+      "interpretation_cells": [
+        "241823a8",
+        "7574b64a",
+        "5ecdbc43"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "33f5c22bba8d95dad1bbc9a79cf605c4fb61c6eead76b82ac60d65a7a4a43ad3",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Compare daily provider labels with physicalUTC support and hourly reconstructions.",
+        "finding": "Tokyo firstlocalday starts15hours after Reykjavik firstday in this acquisition because date labels differ. GMTexperiment aligns bothstarts at00:00UTC. Reported dailymin/maxarenotuncertaintyintervals."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "forecast_current"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.forecast_current"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Keep the provider current interval distinct from hourly forecast samples.",
+        "finding": "One current row retains timestamp, intervalduration, modeledconditions and its own acquisition clock; it is not a verifying station observation."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "elevation"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.elevation"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story"
+      ],
+      "result_cells": [
+        "location-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "location-result",
+        "finding"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Compare point-terrain elevation to geocoded and modelgrid elevations.",
+        "finding": "The point lookup returns40m and modelgrid elevation40m while geocoding elevation44m; different products and support, not an accuracy test."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "weather_codes"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.weather_codes"
+        }
+      ],
+      "narrative_cells": [
+        "decoding-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Join the complete local reference onto returned WMOcodes without dropping hours.",
+        "finding": "All48hourlyrows retained;0unknowncodes and9distinctconditions. Each joineddescription agrees with the textmacro."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "weather_code_text"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "decode",
+          "reference": "weather.main.weather_code_text"
+        }
+      ],
+      "narrative_cells": [
+        "decoding-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Decode returned WMO numbers into readable conditions while preserving numeric codes.",
+        "finding": "Actual returned conditions match the reference description on all knowncodes;9distinctconditions; no severityordering inferred."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "weather_code_emoji"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "decode",
+          "reference": "weather.main.weather_code_emoji"
+        }
+      ],
+      "narrative_cells": [
+        "decoding-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Show a compact icon alongside returned raw weathercodes andtext labels.",
+        "finding": "Current and twelve displayedhourlyrows carryicons derived fromactualcodes; icon groups are display semantics, not a numericalseverityscale."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "wind_compass"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "decode",
+          "reference": "weather.main.wind_compass"
+        }
+      ],
+      "narrative_cells": [
+        "decoding-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Translate actual modeled bearings into wind-from compass points.",
+        "finding": "Compasslabels appear beside returnedwind speeds andconditions. Wind-from direction doesnot enter daylight/maximumspeedselection."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "uv_index_category"
+      },
+      "notebook": "02_weather_codes_and_hourly_selection.ipynb",
+      "sql": [
+        {
+          "cell": "decode",
+          "reference": "weather.main.uv_index_category"
+        }
+      ],
+      "narrative_cells": [
+        "decoding-story"
+      ],
+      "result_cells": [
+        "decoded-result",
+        "finding",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "decoded-result",
+        "finding",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "022fa45c2ccec96ca4b60282aa498cb75749e7782fc93d2a81262848de617d8d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Categorize modeledUV alongside the hourlyweathercontext without silently changing the selectionrule.",
+        "finding": "ReturnedLow/Moderate labels accompany rawUV; all48hoursretainindividualweathercontext. Selectiondepends only ondaylightandwind; 1.5\u21920.75m/s changes19\u21926selectedrows foridenticalinputfingerprints."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "air_quality_current"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.air_quality_current"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story",
+        "chart-story"
+      ],
+      "result_cells": [
+        "finding",
+        "concentrations-result",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "finding",
+        "concentrations-story",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "cf612e59ff5e39ded246c29f537b4a035ac5ae3e2bda37026d8cb5b12aac4e5d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Keep the independently acquired modeledcurrentproduct beside thehourlyforecast.",
+        "finding": "One currentrow retainsbothindices,concentrations,gridpoint,timestampandacquisition; it is not a stationmeasurement or an atomic snapshotwithhourlydata."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "air_quality_hourly"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.air_quality_hourly"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story",
+        "chart-story"
+      ],
+      "result_cells": [
+        "finding",
+        "concentrations-result",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "finding",
+        "concentrations-story",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "cf612e59ff5e39ded246c29f537b4a035ac5ae3e2bda37026d8cb5b12aac4e5d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Compare48matching modeledhours across twoindexscales and retainconcentrations.",
+        "finding": "Bothindices presentin48hours;47categorystringsdiffer; indicesarenotconcentrations. UserUS cutoff50\u219235 selects36\u219217hourswithidenticalrawinputfingerprint."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "us_aqi_category"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.us_aqi_category"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story",
+        "chart-story"
+      ],
+      "result_cells": [
+        "finding",
+        "concentrations-result",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "finding",
+        "concentrations-story",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "cf612e59ff5e39ded246c29f537b4a035ac5ae3e2bda37026d8cb5b12aac4e5d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Apply US thresholds to the returnedUS index rather than the Europeanscale.",
+        "finding": "Thepairtable retains USlabels beside Europeanlabels foridenticaltimes; changinganalyticalcutoff leavesmacrocategoryunchanged."
+      }
+    },
+    {
+      "object": {
+        "schema": "main",
+        "name": "european_aqi_category"
+      },
+      "notebook": "03_air_quality_indices_are_different_scales.ipynb",
+      "sql": [
+        {
+          "cell": "inputs",
+          "reference": "weather.main.european_aqi_category"
+        }
+      ],
+      "narrative_cells": [
+        "inputs-story",
+        "chart-story"
+      ],
+      "result_cells": [
+        "finding",
+        "concentrations-result",
+        "checks-result"
+      ],
+      "interpretation_cells": [
+        "finding",
+        "concentrations-story",
+        "experiment"
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "Codex /root",
+        "reviewed_at": "2026-11-14T23:53:27.441155+00:00",
+        "notebook_sha256": "cf612e59ff5e39ded246c29f537b4a035ac5ae3e2bda37026d8cb5b12aac4e5d",
+        "catalog_sha256": [
+          "e62b10cffbafad20a0712c721e1e3cebd70c07c1f8a2e2ee8bfec61497c94ce6",
+          "f435fbf7fc9fcaf5e5b593cc5a895128516fa08c87eb829ec20e453a7e860849"
+        ],
+        "purpose": "Apply European thresholds to its own returnedindex and compare labelpairs.",
+        "finding": "EuropeanGood/Fair/Moderate cutpoints20/40/60 aredistinctfrom USGood50;47of48pairs have differentstrings,not sensor disagreement."
+      }
+    }
+  ]
+}
