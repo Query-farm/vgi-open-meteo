@@ -333,6 +333,8 @@ export const openMeteoCatalog: CatalogDescriptor = {
   sourceUrl: "https://open-meteo.com",
   tags: {
     "vgi.title": "Open-Meteo Weather",
+    "vgi.subtitle":
+      "Keyless weather forecasts, history, air quality, marine, flood and climate data from Open-Meteo, plus geocoding and elevation.",
     "vgi.doc_llm": CATALOG_DOC_LLM,
     "vgi.doc_md": CATALOG_DOC_MD,
     "vgi.keywords": JSON.stringify(KEYWORDS),
