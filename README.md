@@ -493,3 +493,7 @@ itself for [`vgi-lint`](https://github.com/Query-farm/vgi-lint-check).
 
 MIT — see [LICENSE](LICENSE). Weather data © Open-Meteo, licensed
 [CC BY 4.0](https://open-meteo.com/en/license).
+
+## Executed notebooks
+
+[Weather windows in SQL](notebooks/README.md) compares two cities, daily boundaries and hourly forecast aggregation through the published worker.
