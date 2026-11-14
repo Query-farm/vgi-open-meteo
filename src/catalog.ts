@@ -18,6 +18,7 @@ import {
   serializeAttachOptionSpecs,
 } from "vgi/worker-cf";
 
+import { COMPOSED_EXAMPLES } from "./composed-examples.js";
 import { allWeatherFunctions } from "./functions.js";
 import { WEATHER_MACROS } from "./macros.js";
 import { ATTACH_OPTION_SPECS, encodeAttachOpaqueData } from "./attach-options.js";
@@ -197,6 +198,13 @@ const AGENT_TEST_TASKS = [
     prompt: "How high are the waves at Scheveningen over the next two days? I don't know its coordinates.",
   },
   {
+    name: "los_angeles_dry_good_air_hours",
+    prompt:
+      "Starting from the place name Los Angeles, count the hours in the next two days (the forecast_days := 2 " +
+      "window, hours in UTC) that are both dry (forecast precipitation exactly 0 mm) and have a US AQI of 50 or " +
+      "lower. Save the answer as a one-row temp table la_good_hours with a single integer column hours.",
+  },
+  {
     name: "denver_elevation_by_name",
     prompt: "How far above sea level is Denver, in metres?",
   },
@@ -245,6 +253,7 @@ const SCHEMA_EXAMPLE_QUERIES = [
       "LATERAL open_meteo.main.forecast_daily(g.latitude, g.longitude, forecast_days := 3, timezone := 'auto') AS d " +
       "ORDER BY p.city, d.time",
   },
+  ...COMPOSED_EXAMPLES,
 ];
 
 // A browsable reference relation (view): the full WMO weather-code table. It

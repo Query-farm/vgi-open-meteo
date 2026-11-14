@@ -86,7 +86,7 @@ must match it, or you get "No worker handles catalog '<name>'".
 
 ## Functions
 
-There are **13 table functions + 6 scalar macros + 1 view (`weather_codes`)**:
+There are **16 table functions + 6 scalar macros + 1 view (`weather_codes`)**:
 every function requires `latitude`/`longitude` (or a `name`) as a *positional*
 argument, so there's nothing to `SELECT * FROM table` without `()`. Optional args
 (`timezone`, `forecast_days`, `temperature_unit`, …) are *named* (they have
@@ -107,7 +107,7 @@ scalar function is an RPC per value. Call them schema-qualified, e.g.
 They carry the same `vgi.*` docs as the functions and sit under the `helpers`
 category; the (deterministic) macros are asserted in `open_meteo_catalog.test`.
 
-**Blended functions: args can be columns.** All 13 are
+**Blended functions: args can be columns.** All 16 are
 `defineRowTransformFunction` ("blended" table-in-out), not `defineTableFunction`.
 Their **positional args are per-row input columns**, so one registration serves
 every call shape:
@@ -242,7 +242,7 @@ the `choices`/`ge`/`le`/`pattern` constraints surface in **`vgi_function_argumen
 table functions and the macros. Column comments surface via `duckdb_columns()` /
 `DESCRIBE` as usual.
 
-Eleven are **"block" functions** generated from one config table; two are
+Fourteen are **"block" functions** generated from one config table; two are
 bespoke:
 
 | Function | Host | Block |
@@ -256,8 +256,9 @@ bespoke:
 | `geocoding` | geocoding-api.open-meteo.com `/v1/search` | place name → coords (search table) |
 | `elevation` | api.open-meteo.com `/v1/elevation` | terrain elevation, 1 row |
 
-**Not ported:** ensemble / seasonal / satellite endpoints — ensemble returns
-per-member dynamic columns that don't fit a static Arrow schema.
+Also generated: `previous_runs_hourly` (previous-runs-api) and `ensemble_hourly` /
+`ensemble_daily` (ensemble-api; a fixed control column plus `_memberNN` columns).
+**Not ported:** seasonal / satellite endpoints.
 
 ## Architecture
 
@@ -290,9 +291,15 @@ per-member dynamic columns that don't fit a static Arrow schema.
 - `src/temporal.ts` — versioned `open_meteo.temporal` field-support definitions.
   The standard VGI member schema disallows extra temporal properties, so this
   is a separate function tag; the reference compiler does not enforce it.
-- `src/functions.ts` — `defineWeatherFunction(config)` generates the 11 block
+- `src/functions.ts` — `defineWeatherFunction(config)` generates the 14 block
   functions; `geocoding` and `elevation` are defined directly. All read the API
   key via `apiKeyFromParams(params)`.
+- `src/composed-examples.ts` — example queries that join two or more of the
+  catalog's functions (weather × air quality, marine × wind, forecast × ensemble,
+  forecast × last year's reanalysis). Each SQL is defined once and lands both in
+  the schema-level list and right after the driving function's first example
+  (the agent simulator shows only the first five per function);
+  `test/unit/composed-examples.test.ts` pins that.
 - `src/macros.ts` — `WEATHER_MACROS`, the 6 scalar decoding macros (WMO code,
   wind compass, AQI, UV) added to the `main` schema. Pure SQL `definition`
   strings; no runtime vgi import (type-only), so they add nothing to any bundle.

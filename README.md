@@ -176,6 +176,21 @@ ORDER BY p.city;
 Literals still work exactly as before — `forecast_current(37.66542, -77.49359)`
 is the same function, called with a one-row input.
 
+The functions also join to each other. Every hourly function reports the same
+UTC `time`, so the weather forecast and the air-quality forecast line up hour
+by hour — here, the dry hours of the next two days, cleanest air first:
+
+```sql
+SELECT w.time, w.temperature_2m, a.european_aqi,
+       m.main.european_aqi_category(a.european_aqi) AS air_quality
+FROM m.main.forecast_hourly(52.52, 13.41, forecast_days := 2) AS w
+JOIN m.main.air_quality_hourly(52.52, 13.41, forecast_days := 2) AS a
+  ON a.time = w.time
+WHERE w.precipitation = 0
+ORDER BY a.european_aqi, w.time
+LIMIT 10;
+```
+
 ### How many requests a join makes
 
 A `LATERAL` over many places does not make one Open-Meteo request per row.

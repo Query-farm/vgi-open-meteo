@@ -55,6 +55,7 @@ import {
 import type { ArgumentConstraints } from "vgi";
 import type { OutputCollector } from "vgi-rpc";
 
+import { COMPOSED_EXAMPLES_BY_FUNCTION } from "./composed-examples.js";
 import { ENDPOINTS, type EndpointConfig } from "./endpoints.js";
 import { blockSchema, ELEVATION_SCHEMA, GEOCODING_SCHEMA, resultColumnsSchema } from "./schemas.js";
 
@@ -396,6 +397,10 @@ function defineWeatherFunction(config: EndpointConfig): VgiFunction {
         : `${base} (Berlin).`,
     },
   ];
+  // Composed examples (this function joined to another of the catalog's) go
+  // right after the basic call, inside the first five examples the vgi-lint
+  // agent simulator shows per object.
+  examples.push(...(COMPOSED_EXAMPLES_BY_FUNCTION[config.name] ?? []));
   if (config.args.forecastDays) {
     const tz = config.args.timezone ? ", timezone := 'auto'" : "";
     examples.push({

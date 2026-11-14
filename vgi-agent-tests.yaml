@@ -142,3 +142,17 @@ tasks:
       SELECT g.name, e.elevation
       FROM open_meteo.main.geocoding('Denver', count := 1) AS g,
            LATERAL open_meteo.main.elevation(g.latitude, g.longitude) AS e
+
+  - name: los_angeles_dry_good_air_hours
+    # Composes geocoding -> forecast_hourly joined to air_quality_hourly on the
+    # UTC hour. Live data, so the analyst saves its count and the grader
+    # recomputes it from the same place name (a wrong filter or window fails).
+    check_sql: >-
+      SELECT (SELECT count(*) FROM la_good_hours) = 1
+      AND (SELECT max(hours) FROM la_good_hours) = (
+        SELECT count(*)
+        FROM open_meteo.main.geocoding('Los Angeles', count := 1) AS g,
+             LATERAL open_meteo.main.forecast_hourly(g.latitude, g.longitude, forecast_days := 2) AS w
+        JOIN open_meteo.main.air_quality_hourly(g.latitude, g.longitude, forecast_days := 2) AS a
+          ON a.time = w.time
+        WHERE w.precipitation = 0 AND a.us_aqi <= 50)
