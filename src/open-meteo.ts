@@ -30,7 +30,10 @@ export interface OmResponse {
 
 const _cache = new Map<string, OmResponse>();
 
-async function httpGet(url: string): Promise<Response> {
+/** Message prefix CI uses to tell an unreachable upstream from a worker bug. */
+export const UPSTREAM_TIMEOUT_MESSAGE = "Open-Meteo did not respond within";
+
+async function httpGet(url: string, path: string): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -38,6 +41,19 @@ async function httpGet(url: string): Promise<Response> {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
+  } catch (err) {
+    // A bare "AbortError: The operation was aborted" tells a SQL user nothing.
+    // Name the host and the limit; the URL (which may carry the apikey) stays
+    // on the error object, out of the message.
+    if (controller.signal.aborted) {
+      const host = new URL(url).host;
+      throw new OpenMeteoError(
+        url,
+        0,
+        `${UPSTREAM_TIMEOUT_MESSAGE} ${REQUEST_TIMEOUT_MS / 1000} s (${host}${path}); the API may be throttling this IP — retry later`,
+      );
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
@@ -101,7 +117,7 @@ export async function omGetWithMetadata(
   const cached = _cache.get(url);
   if (cached && now - cached.retrievedAt < ttl) return cached;
 
-  const resp = await httpGet(url);
+  const resp = await httpGet(url, path);
   if (!resp.ok) {
     // Open-Meteo error bodies are `{"error": true, "reason": "..."}`.
     let detail = `HTTP ${resp.status}`;

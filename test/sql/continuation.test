@@ -14,7 +14,7 @@ statement ok
 LOAD httpfs;
 
 statement ok
-ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '{VGI_OPEN_METEO_WORKER}');
 
 # The weather functions pack a call's distinct locations into multi-location
 # requests (weighted at most 10 Open-Meteo API calls and 100 locations each) and

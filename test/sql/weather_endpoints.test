@@ -14,7 +14,7 @@ statement ok
 LOAD httpfs;
 
 statement ok
-ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '${VGI_OPEN_METEO_WORKER}');
+ATTACH 'open_meteo' AS open_meteo (TYPE vgi, LOCATION '{VGI_OPEN_METEO_WORKER}');
 
 # Berlin (52.52, 13.41) for land endpoints; a North Sea coastal point
 # (54.5, 8.0) for marine so wave variables are populated.

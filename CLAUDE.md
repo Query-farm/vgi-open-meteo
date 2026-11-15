@@ -513,13 +513,16 @@ lives elsewhere. The tests hit the **live Open-Meteo API**, so they need network
 access. `test-cf` hits the deployment, which runs open (no auth configured), so
 no token is needed.
 
-**The SQL suites can't reliably pass on GitHub Actions.** Open-Meteo throttles
-GitHub-hosted runner IPs, which are shared. Partway through a run, connections
-start to hang rather than return a 429: the worker's 15 s fetch timeout fires
-(`AbortError: The operation was aborted`), and plain `curl` from the same runner
-hangs too. Either lane (stdio or HTTP) can fail. Treat a red "SQL integration"
-job as expected and run the suites locally instead. The deploy goes to
-Cloudflare, which GitHub CI doesn't gate.
+**Open-Meteo throttles GitHub Actions.** It throttles the shared GitHub-hosted
+runner IPs by letting connections hang rather than returning a 429, and plain
+`curl` from the same runner hangs too. Either lane (stdio or HTTP) can be hit,
+on any host (api.open-meteo.com and climate-api most often). The worker's 15 s
+fetch timeout then fails the query with `Open-Meteo did not respond within 15 s
+(<host><path>)` (`UPSTREAM_TIMEOUT_MESSAGE` in `open-meteo.ts`). CI runs the
+suite through `ci/run-live-sql.sh`, which keeps the job red on any other
+failure. A run where every failure is that timeout becomes a warning
+annotation instead. A "Probe Open-Meteo reachability" step logs each host's
+response time first. Run the suites locally to check a warned run.
 
 ## arrow-js single-copy (npm deps)
 
