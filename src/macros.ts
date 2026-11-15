@@ -126,7 +126,7 @@ function scalarMacro(s: MacroSpec): MacroDescriptor {
     tags: {
       "vgi.category": HELPERS,
       "vgi.keywords": JSON.stringify(s.keywords),
-      "vgi.doc_llm": s.docLlm,
+      "vgi.doc_llm": `${s.docLlm} Call it schema-qualified, e.g. open_meteo.main.${s.name}(...), in the same query as the function that returned the column.`,
       // Prose only — runnable queries live in vgi.example_queries, not in a
       // ```sql fence in the description (VGI179).
       "vgi.doc_md": [`## ${s.name}`, "", s.docMd].join("\n"),

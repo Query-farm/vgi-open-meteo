@@ -75,38 +75,36 @@ const CATALOG_DOC_MD = [
 
 const SCHEMA_DOC_LLM =
   "The main schema holds the full Open-Meteo function family. It groups point-based weather into " +
-  "forecast (hourly/daily/current), historical reanalysis, air-quality, marine, flood and " +
-  "climate-projection categories, plus two helpers: geocoding to resolve place names to coordinates " +
-  "and elevation to look up terrain height. All functions share one calling convention — a WGS84 " +
-  "latitude/longitude and named optional arguments (timezone, units, forecast_days, date ranges, " +
-  "model for forecast/history, models for specialist functions) — and emit UTC timestamps. Positional arguments accept columns, so use a LATERAL join " +
-  "over a bounded coordinates table for multi-location queries or to chain geocoding into weather. " +
-  "The schema also provides inline SQL " +
-  "decoding macros in its 'helpers' category — weather_code_text and weather_code_emoji (WMO code), " +
-  "wind_compass (degrees to a 16-point compass), us_aqi_category / european_aqi_category, and " +
-  "uv_index_category — that turn the raw coded columns into human-readable labels; call them " +
-  "schema-qualified, e.g. weather_code_text(weather_code).";
+  "forecast (hourly/daily/current), historical reanalysis, ensemble, previous-runs, air-quality, " +
+  "marine, flood and climate-projection categories, plus a place-name geocoding search and a terrain " +
+  "elevation lookup. All functions share one calling convention — a WGS84 latitude/longitude and " +
+  "named optional arguments (timezone, units, forecast_days, date ranges, model for " +
+  "forecast/history, models for specialist functions) — and emit UTC timestamps. Positional " +
+  "arguments accept columns, so use a LATERAL join over a bounded coordinates table for " +
+  "multi-location queries or to chain the geocoding search into a weather function. Several " +
+  "columns come back as raw codes (WMO weather code, wind direction in degrees, US/European AQI, " +
+  "UV index); the 'helpers' category holds inline SQL macros that decode them into labels, called " +
+  "schema-qualified alongside the functions, and a reference view lists every WMO code.";
 
 const SCHEMA_DOC_MD = [
   "## Open-Meteo functions",
   "",
   "Point-based weather, climate and geospatial functions from [Open-Meteo](https://open-meteo.com), " +
-    "organized into forecast, historical, air-quality, marine, flood and climate categories, plus " +
-    "geocoding and elevation helpers.",
+    "organized into forecast, historical, ensemble, previous-runs, air-quality, marine, flood and " +
+    "climate categories, plus geocoding and elevation helpers.",
   "",
   "Every function shares one calling convention: a WGS84 `latitude`/`longitude` (geocoding takes a " +
     "`name`), named optional arguments, and UTC timestamps. Positional arguments may be columns: use " +
-    "a bounded `LATERAL` join for several locations, or chain `geocoding(...)` directly into a weather " +
-    "function in one query.",
+    "a bounded `LATERAL` join for several locations, or chain the geocoding search directly into a " +
+    "weather function in one query.",
   "",
   "### Decoding helpers",
   "",
-  "Several columns come back as raw codes. The schema's `helpers` category adds inline SQL macros " +
-    "that decode them — `weather_code_text` / `weather_code_emoji`, `wind_compass`, " +
-    "`us_aqi_category` / `european_aqi_category`, and `uv_index_category`. They expand inline (no " +
-    "round-trip); call them schema-qualified alongside the functions (applying, say, " +
-    "`weather_code_text` to the `weather_code` column). The browsable `weather_codes` view lists " +
-    "every WMO code with its text and emoji. See each object's example queries for runnable SQL.",
+  "Several columns come back as raw codes: the WMO weather code, wind direction in degrees, US and " +
+    "European AQI, and the UV index. The schema's `helpers` category adds inline SQL macros that " +
+    "decode them into labels. They expand inline (no round-trip); call them schema-qualified " +
+    "alongside the functions. A browsable reference view lists every WMO code with its text and " +
+    "emoji. See each object's example queries for runnable SQL.",
 ].join("\n");
 
 const SCHEMA_CATEGORIES = [
