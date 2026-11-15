@@ -114,14 +114,17 @@ export function blockSchema(config: EndpointConfig): VgiSchema {
 
   const fields: VgiField[] = [field("time", tsUtcMicros(), timeComment, false)];
   if (config.block === "daily") {
-    fields.push(field("date", dateDay(), "Provider's daily date label in the requested timezone (auto by default where supported). Uses the response's fixed UTC offset; DST transitions within a response are not applied."));
+    fields.push(field("date", dateDay(), "Provider's day label in the requested timezone (default auto). Uses the response's fixed UTC offset, ignoring DST changes within it."));
   }
+  // One shared comment per weather variable: the column name is the Open-Meteo
+  // variable name, and its unit is stated once in the function doc (and per
+  // member in vgi.semantic_members where present), which keeps the
+  // vgi.result_columns_schema tag inside the 4,000-character agent limit.
+  const varComment = config.args.units
+    ? "Open-Meteo variable; unit per *_unit args."
+    : "Open-Meteo variable; API default unit.";
   for (const v of config.variables) {
-    const comment =
-      config.variables.length > 20
-        ? "Open-Meteo value; units follow request options."
-        : `Open-Meteo "${v.name}" value; units per request options.`;
-    fields.push(field(v.name, arrowType(v), comment));
+    fields.push(field(v.name, arrowType(v), varComment));
   }
   for (const f of contextFields(config.name)) {
     const type = f.type === "VARCHAR" ? utf8() : f.type === "INTEGER" ? int32()

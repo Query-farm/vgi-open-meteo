@@ -306,7 +306,11 @@ function blockFunctionTags(
   const extras: string[] = [];
   if (config.args.dateRange) extras.push("a start_date/end_date range is required (yyyy-mm-dd)");
   if (config.args.forecastDays) extras.push("the window is set with forecast_days / past_days");
-  if (config.args.units) extras.push("units are configurable (temperature_unit, wind_speed_unit, precipitation_unit)");
+  extras.push(
+    config.args.units
+      ? "each weather column is the Open-Meteo variable of that name, in the unit chosen by temperature_unit / wind_speed_unit / precipitation_unit (provider defaults otherwise)"
+      : "each weather column is the Open-Meteo variable of that name, in the API's default unit",
+  );
   if (config.args.model) extras.push("select one model with model; model_selection records that request, while retrieved_at records response retrieval, not forecast issuance");
   if (config.args.models) extras.push("specific models can be selected with the models argument");
   if (config.args.timezone) {

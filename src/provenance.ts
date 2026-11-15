@@ -4,20 +4,20 @@ import type { OmResponse } from "./open-meteo.js";
 // Explicit shared definitions for physical columns and semantic dimensions.
 // These describe response provenance, not inferred model-run provenance.
 export const PROVENANCE_FIELDS = [
-  { name: "model_selection", title: "Requested model selection", type: "VARCHAR", description: "Requested model selector, or provider_default where model selection is unavailable. best_match may combine models. Even an explicit selector does not identify the source of every derived field, such as precipitation probability." },
-  { name: "source_endpoint", title: "Source API product", type: "VARCHAR", description: "Public API product URL, without query parameters or credentials. Commercial requests use the corresponding customer host." },
-  { name: "retrieved_at", title: "Response retrieved at (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "When this worker received the upstream JSON response. Preserved on worker-cache hits. This is not a model run time, issue time or data freshness guarantee." },
-  { name: "grid_latitude", title: "Returned grid latitude", type: "DOUBLE", unit: "deg", description: "Provider-returned grid latitude, which may differ from the requested location. It does not identify every component grid in blended or derived data." },
-  { name: "grid_longitude", title: "Returned grid longitude", type: "DOUBLE", unit: "deg", description: "Provider-returned grid longitude, which may differ from the requested location." },
-  { name: "location_elevation", title: "Downscaling elevation", type: "DOUBLE", unit: "m", description: "Provider-returned target elevation used for location selection and downscaling, where supplied. This is not necessarily the raw model-grid elevation." },
-  { name: "response_timezone", title: "Resolved response timezone", type: "VARCHAR", description: "Timezone identifier returned by the provider. Timestamps remain UTC instants; the response UTC offset labels provider daily intervals." },
-  { name: "utc_offset_seconds", title: "Response UTC offset", type: "INTEGER", unit: "s", description: "Provider's fixed UTC offset for this response. It is not recomputed for DST transitions within the response." },
+  { name: "model_selection", title: "Requested model selection", type: "VARCHAR", description: "Requested model, or provider_default where not selectable. best_match may blend models; even an explicit model may not source every derived field (e.g. precipitation probability)." },
+  { name: "source_endpoint", title: "Source API product", type: "VARCHAR", description: "API product URL, without query or credentials (customer host for commercial requests)." },
+  { name: "retrieved_at", title: "Response retrieved at (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "When the worker received the upstream response (kept on cache hits). Not a model run time, issue time or freshness guarantee." },
+  { name: "grid_latitude", title: "Returned grid latitude", type: "DOUBLE", unit: "deg", description: "Provider's grid latitude; may differ from the requested point and not identify every grid in blended data." },
+  { name: "grid_longitude", title: "Returned grid longitude", type: "DOUBLE", unit: "deg", description: "Provider's grid longitude; may differ from the requested point." },
+  { name: "location_elevation", title: "Downscaling elevation", type: "DOUBLE", unit: "m", description: "Provider's target elevation for grid selection and downscaling, if supplied; not necessarily the model-grid elevation." },
+  { name: "response_timezone", title: "Resolved response timezone", type: "VARCHAR", description: "Provider-resolved timezone. Timestamps stay UTC; the UTC offset labels provider daily intervals." },
+  { name: "utc_offset_seconds", title: "Response UTC offset", type: "INTEGER", unit: "s", description: "Provider's fixed UTC offset for the response; not adjusted for DST changes within it." },
 ] as const;
 
 export const INTERVAL_FIELDS = [
-  { name: "interval_start", title: "Aggregation interval start (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "Start of the row's nominal aggregation window. Applies only to fields assigned this window in open_meteo.temporal metadata; instantaneous values use time instead." },
-  { name: "interval_end", title: "Aggregation interval end (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "End of the row's nominal aggregation window. Hourly/current accumulation windows end at time; daily windows start at time. Source-dependent fields have no asserted common window." },
-  { name: "interval_seconds", title: "Aggregation interval length", type: "INTEGER", unit: "s", description: "Length of the nominal aggregation window: 3600 seconds hourly, 86400 seconds for a provider day, or the provider's current.interval. Unknown current intervals stay NULL. This is not the native model resolution." },
+  { name: "interval_start", title: "Aggregation interval start (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "Start of the nominal aggregation window, for fields assigned it in open_meteo.temporal; instantaneous values use time." },
+  { name: "interval_end", title: "Aggregation interval end (UTC)", type: "TIMESTAMP WITH TIME ZONE", description: "End of the nominal aggregation window (hourly/current windows end at time; daily start at time). Source-dependent fields have no common window." },
+  { name: "interval_seconds", title: "Aggregation interval length", type: "INTEGER", unit: "s", description: "Window length: 3600 hourly, 86400 per provider day, or the provider's current.interval (NULL if unknown). Not the native model resolution." },
 ] as const;
 
 export function hasProvenance(name: string): boolean {
