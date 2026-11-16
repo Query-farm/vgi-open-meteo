@@ -4,6 +4,11 @@
 
 require-env VGI_OPEN_METEO_WORKER
 
+# Live: hits the Open-Meteo API (rate-limited, and it throttles shared CI runner IPs).
+# Opt in with OPEN_METEO_LIVE=1 (make test-sql-live; the scheduled CI `live` job);
+# normal runs skip this file (EXPECTED_SKIP_REASONS) and stay deterministic.
+require-env OPEN_METEO_LIVE
+
 # Transport failures must fail the suite rather than silently skip it.
 set ignore_error_messages
 

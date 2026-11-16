@@ -17,7 +17,8 @@ make typecheck      # bunx tsc --noEmit
 make worker         # stdio worker (for DuckDB ATTACH ... TYPE vgi, LOCATION 'bun run ...')
 make serve          # HTTP server on $VGI_HTTP_PORT (default 8000)
 
-make test           # unit tests + SQL integration tests over stdio/launch/http (live API)
+make test           # unit tests + offline SQL tests over stdio/launch/http
+make test-sql-live  # + the live-API files (OPEN_METEO_LIVE=1); TRANSPORT=stdio|launch|http
 make check          # typecheck + the same
 make test-semantic  # offline worker + reference semantic compiler acceptance tests
 make test-sql TRANSPORT=stdio|launch|http  # test/sql/*.test over one transport
@@ -434,7 +435,9 @@ one reply, while the uncached weather functions are the ones that continue.
 `cache.test` pins it: ten names go out as calls of 8 and 2, 101 points as calls
 of 100 and 1, and the repeat of each makes no worker call at all.
 
-**The suite is rate-limit sensitive.** It runs against the live free tier
+**The live files are rate-limit sensitive.** Every file except `open_meteo_catalog.test` carries
+`require-env OPEN_METEO_LIVE` and runs only under `make test-sql-live` (and CI's scheduled
+`live` job); default runs skip them as an expected skip reason. It runs against the live free tier
 (600 weighted calls/minute per IP, and elevation counts every coordinate), so
 running the transports back to back (`make test-sql-all`) from one host can trip
 HTTP 429. Every file sets `set ignore_error_messages` (empty), so a 429 —

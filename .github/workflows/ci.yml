@@ -2,14 +2,17 @@
 #
 # Unit, build, Node IPC and stdio/launch/HTTP SQL integration gates run before
 # publishing a container. SQL integration uses the published haybarn-unittest
-# runner with the signed community vgi extension and exercises the live
-# Open-Meteo API.
+# runner with the signed community vgi extension, offline; the scheduled
+# `live` job exercises the live Open-Meteo API.
 name: CI
 
 on:
   push:
   pull_request:
   workflow_dispatch:
+  # Daily run of the live Open-Meteo suite (the `live` job); push/PR CI stays offline.
+  schedule:
+    - cron: '23 6 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -123,10 +126,9 @@ jobs:
           grep -q '"status":"ok"' /tmp/health.json
           docker rm -f smoke
 
-  # Open-Meteo throttles GitHub-hosted runner IPs by letting connections hang
-  # (no 429), so live requests can time out through no fault of the worker.
-  # ci/run-live-sql.sh fails the job on any real failure and downgrades a run
-  # whose every failure is that upstream timeout to a warning annotation.
+  # Offline SQL suite over every transport (ci/run-integration.sh, the vgi-starter
+  # standard, against ci/worker). Files that call the live Open-Meteo API carry
+  # `require-env OPEN_METEO_LIVE` and skip here, so push/PR CI is deterministic.
   integration:
     name: SQL integration (${{ matrix.transport }})
     runs-on: ubuntu-latest
@@ -134,9 +136,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ci/run-integration.sh (the vgi-starter standard) against ci/worker:
-        # stdio, the launch: unix-socket pool, and the HTTP server.
         transport: [stdio, launch, http]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: astral-sh/setup-uv@v6
+      - run: bun install --frozen-lockfile
+      - name: Run SQL integration suite (offline)
+        run: make test-sql TRANSPORT=${{ matrix.transport }}
+
+  # The live suite, daily or on manual dispatch only. Open-Meteo throttles
+  # GitHub-hosted runner IPs by letting connections hang (no 429), so live
+  # requests can time out through no fault of the worker. ci/run-live-sql.sh
+  # fails the job on any real failure and downgrades a run whose every failure
+  # is that upstream timeout to a warning annotation.
+  live:
+    name: SQL integration live (Open-Meteo API)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -148,5 +166,5 @@ jobs:
             curl -s -o /dev/null -m 10 -w "$host.open-meteo.com %{http_code} %{time_total}s\n" \
               "https://$host.open-meteo.com/" || echo "$host.open-meteo.com unreachable (curl exit $?)"
           done
-      - name: Run SQL integration suite
-        run: ci/run-live-sql.sh test-sql TRANSPORT=${{ matrix.transport }}
+      - name: Run the live SQL suite
+        run: ci/run-live-sql.sh test-sql-live TRANSPORT=stdio
