@@ -1,8 +1,9 @@
 # Build gates that run on every push and PR.
 #
-# Unit, build, Node IPC and stdio/HTTP SQL integration gates run before
-# publishing a container. SQL integration uses the signed VGI protocol 2.2
-# extension and exercises the live Open-Meteo API.
+# Unit, build, Node IPC and stdio/launch/HTTP SQL integration gates run before
+# publishing a container. SQL integration uses the published haybarn-unittest
+# runner with the signed community vgi extension and exercises the live
+# Open-Meteo API.
 name: CI
 
 on:
@@ -133,17 +134,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        transport: [stdio, http]
+        # ci/run-integration.sh (the vgi-starter standard) against ci/worker:
+        # stdio, the launch: unix-socket pool, and the HTTP server.
+        transport: [stdio, launch, http]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
       - run: bun install --frozen-lockfile
-      - name: Install matching SQL runner and signed extensions
-        run: |
-          uv tool install haybarn-unittest==2.0.0rc11
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "FORCE INSTALL vgi FROM community; INSTALL httpfs; INSTALL json;" | uvx --from haybarn-cli==2.0.0rc11 haybarn
       - name: Probe Open-Meteo reachability from this runner
         run: |
           for host in api geocoding-api archive-api climate-api air-quality-api marine-api flood-api; do
@@ -151,4 +149,4 @@ jobs:
               "https://$host.open-meteo.com/" || echo "$host.open-meteo.com unreachable (curl exit $?)"
           done
       - name: Run SQL integration suite
-        run: ci/run-live-sql.sh test-${{ matrix.transport }} TEST_RUNNER="$HOME/.local/bin/haybarn-unittest --keep-home"
+        run: ci/run-live-sql.sh test-sql TRANSPORT=${{ matrix.transport }}

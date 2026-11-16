@@ -17,10 +17,10 @@ make typecheck      # bunx tsc --noEmit
 make worker         # stdio worker (for DuckDB ATTACH ... TYPE vgi, LOCATION 'bun run ...')
 make serve          # HTTP server on $VGI_HTTP_PORT (default 8000)
 
-make test           # unit tests + stdio/HTTP SQL integration tests (live API)
+make test           # unit tests + SQL integration tests over stdio/launch/http (live API)
+make check          # typecheck + the same
 make test-semantic  # offline worker + reference semantic compiler acceptance tests
-make test-stdio     # run test/sql/*.test against the bun stdio worker
-make test-http      # boot a local HTTP server, run the suite against it, stop it
+make test-sql TRANSPORT=stdio|launch|http  # test/sql/*.test over one transport
 make test-cf        # run against the deployed Cloudflare Worker ($WORKER_CF)
 
 make docker-build   # plain `bun install` build — no vendoring
@@ -348,7 +348,7 @@ suite against the deployment (`WORKER_CF`). Live at
 `https://vgi-open-meteo.rusty-bb6.workers.dev` — **this is the only deployment**.
 `fly.toml`, the `Dockerfile` and `make deploy` still work, but no Fly app exists
 (there is no `vgi-open-meteo.fly.dev`; `make deploy` would create one, not update
-one), so `serve.ts` is exercised only by `make serve` / `make test-http`.
+one), so `serve.ts` is exercised only by `make serve` / `make test-sql TRANSPORT=http`.
 
 CORS **defaults to `*`** as of vgi 0.27.0, so `cf.ts` passes
 `corsOrigins: env.VGI_HTTP_CORS_ORIGINS` only to *narrow* it per-deployment;
@@ -436,7 +436,7 @@ of 100 and 1, and the repeat of each makes no worker call at all.
 
 **The suite is rate-limit sensitive.** It runs against the live free tier
 (600 weighted calls/minute per IP, and elevation counts every coordinate), so
-running `test-stdio` and `test-http` back to back from one host can trip
+running the transports back to back (`make test-sql-all`) from one host can trip
 HTTP 429. Every file sets `set ignore_error_messages` (empty), so a 429 —
 like any transport error — fails the file instead of being silently skipped
 (the sqllogictest runner's default skips errors that mention `HTTP`); rerun it
@@ -506,10 +506,10 @@ Worker.
   per-output-row provenance (asserted via `elevation` echoing its input
   coordinate back next to the outer row).
 
-They run under DuckDB's `unittest` runner, which must be a build with the `vgi`
-and `httpfs` extensions statically linked — `make` defaults `TEST_RUNNER` to
-`~/Development/vgi/build/release/test/unittest`. Override `TEST_RUNNER` if yours
-lives elsewhere. The tests hit the **live Open-Meteo API**, so they need network
+They run under the published `haybarn-unittest` runner (`make tools` pins it
+into `.tools`) with the signed community `vgi` extension, through
+`ci/run-integration.sh` (the vgi-starter standard) against `ci/worker` over
+stdio, `launch:` (unix-socket pool) or HTTP. The tests hit the **live Open-Meteo API**, so they need network
 access. `test-cf` hits the deployment, which runs open (no auth configured), so
 no token is needed.
 

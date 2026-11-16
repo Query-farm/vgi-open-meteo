@@ -114,6 +114,9 @@ const vgiHandler = createHttpHandler(protocol, {
 // matching fly.toml's health check. We therefore hand requests straight to the
 // VGI handler rather than intercepting /health (which would drop CORS).
 const server = Bun.serve({ port: PORT, hostname: HOST, fetch: vgiHandler });
+// ci/worker --http and ci/run-integration.sh read the bound port from this line
+// (VGI_HTTP_PORT=0 binds any free port).
+process.stdout.write(`PORT:${server.port}\n`);
 process.stderr.write(
   `[vgi-open-meteo] listening on http://${HOST}:${server.port}${PREFIX} ` +
     `(auth: ${auth.authenticate ? "JWT required" : "open"})\n`,

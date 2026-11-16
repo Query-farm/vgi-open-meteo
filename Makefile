@@ -1,8 +1,8 @@
 SHELL := /bin/bash
 
 .PHONY: install typecheck worker serve docker-build deploy \
-        cf-dev cf-deploy cf-secret test-cf \
-        test test-unit test-semantic test-stdio test-http
+        cf-dev cf-deploy cf-secret test-cf tools check \
+        test test-unit test-semantic test-sql test-sql-all
 
 install:
 	bun install
@@ -11,20 +11,23 @@ typecheck:
 	bunx tsc -p tsconfig.json --noEmit
 
 # ---------------------------------------------------------------------------
-# SQL integration tests (sqllogictest). The .test files in test/sql/ are
-# transport-agnostic: VGI_OPEN_METEO_WORKER is the ATTACH LOCATION — a stdio
-# command, a local HTTP URL, or the deployed Cloudflare Worker. Run them with
-# DuckDB's unittest runner (a build with vgi + httpfs statically linked).
+# SQL integration tests (sqllogictest) through the published haybarn-unittest
+# runner and the signed community vgi extension, as in the vgi-starter
+# template: ci/run-integration.sh runs test/sql/*.test over one transport
+# (stdio | launch | http) against ci/worker. VGI_OPEN_METEO_WORKER is the
+# ATTACH LOCATION. The suite hits the live Open-Meteo API.
 # ---------------------------------------------------------------------------
-TEST_RUNNER  ?= $(HOME)/Development/vgi/build/release/test/unittest
-TEST_PATTERN ?= test/sql/*
-HTTP_PORT    ?= 8000
-WORKER_STDIO ?= bun run $(CURDIR)/src/bin/worker.ts
-WORKER_HTTP  ?= http://localhost:$(HTTP_PORT)
-WORKER_CF    ?= https://vgi-open-meteo.rusty-bb6.workers.dev
+HAYBARN_VERSION  ?= 2.0.0rc11
+TOOLS            := $(CURDIR)/.tools
+HAYBARN_UNITTEST := $(TOOLS)/bin/haybarn-unittest
+WORKER           := $(CURDIR)/ci/worker
+TRANSPORT        ?= stdio
+WORKER_CF        ?= https://vgi-open-meteo.rusty-bb6.workers.dev
 
 # Default suite uses the local transports; test-cf hits the live deployment.
-test: test-unit test-stdio test-http
+test: test-unit test-sql-all
+
+check: typecheck test-unit test-sql-all
 
 test-unit:
 	bun run test
@@ -35,22 +38,23 @@ VGI_LINT_PROJECT ?= $(HOME)/Development/vgi-lint-check
 test-semantic:
 	uv run --project "$(VGI_LINT_PROJECT)" python test/semantic/queries.py
 
-test-stdio:
-	VGI_OPEN_METEO_WORKER="$(WORKER_STDIO)" $(TEST_RUNNER) --test-dir $(CURDIR) "$(TEST_PATTERN)"
+# Install the pinned SQL test runner into .tools.
+tools:
+	@test -x $(HAYBARN_UNITTEST) || { uv venv -q $(TOOLS) && uv pip install -q -p $(TOOLS) haybarn-unittest==$(HAYBARN_VERSION); }
 
-# Boots a local HTTP server on $(HTTP_PORT), runs the suite against it, stops it.
-test-http:
-	@VGI_SIGNING_KEY=dev VGI_HTTP_PORT=$(HTTP_PORT) bun run src/bin/serve.ts & \
-		SERVER_PID=$$!; \
-		for i in $$(seq 1 20); do curl -fsS http://localhost:$(HTTP_PORT)/health >/dev/null 2>&1 && break; sleep 0.5; done; \
-		VGI_OPEN_METEO_WORKER="$(WORKER_HTTP)" $(TEST_RUNNER) --test-dir $(CURDIR) "$(TEST_PATTERN)"; \
-		TEST_EXIT=$$?; \
-		kill $$SERVER_PID 2>/dev/null; wait $$SERVER_PID 2>/dev/null; \
-		exit $$TEST_EXIT
+# make test-sql TRANSPORT=stdio|launch|http
+test-sql: install tools
+	WORKER=$(WORKER) HAYBARN_UNITTEST=$(HAYBARN_UNITTEST) TRANSPORT=$(TRANSPORT) ci/run-integration.sh
 
-# Run the suite against the deployed Cloudflare Worker.
-test-cf:
-	VGI_OPEN_METEO_WORKER="$(WORKER_CF)" $(TEST_RUNNER) --test-dir $(CURDIR) "$(TEST_PATTERN)"
+test-sql-all:
+	$(MAKE) test-sql TRANSPORT=stdio
+	$(MAKE) test-sql TRANSPORT=launch
+	$(MAKE) test-sql TRANSPORT=http
+
+# Run the suite against the deployed Cloudflare Worker (the .test files LOAD
+# vgi and httpfs themselves; run test-sql once first to install them).
+test-cf: tools
+	VGI_OPEN_METEO_WORKER="$(WORKER_CF)" $(HAYBARN_UNITTEST) --keep-home --test-dir $(CURDIR) "test/sql/*"
 
 # Run the worker on stdin/stdout (for DuckDB ATTACH ... TYPE vgi, LOCATION 'bun run src/bin/worker.ts')
 worker:
