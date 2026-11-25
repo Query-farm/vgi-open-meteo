@@ -19,7 +19,7 @@ typecheck:
 # `require-env OPEN_METEO_LIVE` and skip unless it is set (make test-sql-live),
 # so the default suite is offline and deterministic.
 # ---------------------------------------------------------------------------
-HAYBARN_VERSION  ?= 2.0.0rc11
+HAYBARN_VERSION  ?= 2.0.1rc3
 TOOLS            := $(CURDIR)/.tools
 HAYBARN_UNITTEST := $(TOOLS)/bin/haybarn-unittest
 WORKER           := $(CURDIR)/ci/worker
